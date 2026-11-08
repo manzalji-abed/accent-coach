@@ -15,6 +15,7 @@ import {
 } from "@/lib/live/pcm";
 import { LATE_TEXT_MS, LiveTranscript, SPEECH_LEAD_MS, upsertTurn, type Review } from "@/lib/live/transcript";
 import { rateLimited } from "@/lib/ai/guard";
+import { builtInVoiceActive, estimateSpeechMs, stopSpeaking } from "@/lib/speech";
 import { normalizeReview } from "@/lib/ai/schemas";
 
 describe("live audio: PCM conversion", () => {
@@ -321,5 +322,20 @@ describe("live audio: finding one word inside a sentence recording", () => {
     const samples = join(burst(400), burst(400));
     expect(estimateWordSpan(samples, rate, "hello there", "banana")).toBeNull();
     expect(estimateWordSpan(quiet(800), rate, "hello there", "there")).toBeNull();
+  });
+});
+
+
+describe("built-in voice timing (keeps the live mic muted only while it talks)", () => {
+  it("estimates speaking time from the text, with a floor and an 8 s cap", () => {
+    expect(estimateSpeechMs("hi")).toBeGreaterThanOrEqual(700);
+    expect(estimateSpeechMs("comfortable", 0.8)).toBeLessThan(2500);
+    expect(estimateSpeechMs("word ".repeat(500))).toBe(8000);
+  });
+
+  it("is not active until something is said, and stopping clears it", () => {
+    expect(builtInVoiceActive()).toBe(false);
+    stopSpeaking();
+    expect(builtInVoiceActive()).toBe(false);
   });
 });
