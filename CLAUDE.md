@@ -15,7 +15,7 @@ mispronounced words and explains how to fix them.
 | Dev server (demo mode without a key) | `npm run dev` |
 | Typecheck | `npm run typecheck` |
 | Unit + pipeline tests | `npm test` |
-| Production build | `npm run build` |
+| Production build (Next.js + Cloudflare Workers bundle) | `npm run build` |
 | UI tests (Playwright, fake mic) | `npx playwright test` |
 | Cloudflare build + local run | `npm run preview` |
 
