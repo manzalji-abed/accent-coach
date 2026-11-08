@@ -97,7 +97,12 @@ export class GitHub {
 
   /** The open PR whose head commit has a status `context` linking to `targetUrl`. */
   async findPrByStatus(context, targetUrl) {
-    const prs = await this.req("GET", `/repos/${this.repo}/pulls?state=open&per_page=100`);
+    const prs = [];
+    for (let page = 1; page <= 10; page++) {
+      const batch = await this.req("GET", `/repos/${this.repo}/pulls?state=open&per_page=100&page=${page}`);
+      prs.push(...batch);
+      if (batch.length < 100) break;
+    }
     for (const p of prs) {
       const statuses = await this.req("GET", `/repos/${this.repo}/commits/${p.head.sha}/statuses?per_page=100`);
       if (statuses.some((s) => s.context === context && s.target_url === targetUrl)) return { number: p.number, sha: p.head.sha, headRef: p.head.ref };

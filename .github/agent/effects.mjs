@@ -211,13 +211,16 @@ export function planFixResult(d, result, { runUrl } = {}) {
 export function planReview(result, { pr, sha, runUrl, context }) {
   const ok = result?.verdict === "approve";
   const findings = Array.isArray(result?.findings) ? result.findings : [];
+  // Model-written text must never be able to forge the hidden meta marker (or any other).
+  const clean = (s) => String(s ?? "").replace(/<!--|-->/g, "");
+  const cell = (s) => clean(s).replace(/\|/g, "\\|").replace(/\n/g, " ");
   const rows = findings
     .slice(0, 15)
-    .map((f) => `| ${f.severity ?? "?"} | \`${f.file ?? "?"}${f.line ? `:${f.line}` : ""}\` | ${String(f.issue ?? "").replace(/\|/g, "\\|")} | ${String(f.fix ?? "").replace(/\|/g, "\\|")} |`);
+    .map((f) => `| ${cell(f.severity ?? "?")} | \`${cell(f.file ?? "?")}${f.line ? `:${Number(f.line) || ""}` : ""}\` | ${cell(f.issue)} | ${cell(f.fix)} |`);
   // Auto-merge eligibility is decided here, in code: the model's "high" only
   // counts when it also approved and every finding is low severity.
   const confidence = ["high", "medium", "low"].includes(result?.confidence) ? result.confidence : null;
-  const reason = String(result?.confidence_reason ?? "").trim();
+  const reason = clean(result?.confidence_reason).trim();
   const serious = findings.filter((f) => f.severity !== "low").length;
   const eligible = ok && confidence === "high" && serious === 0;
   const why = !ok
@@ -231,7 +234,7 @@ export function planReview(result, { pr, sha, runUrl, context }) {
     MARK.review,
     `### ${ok ? "✅ Security review: approved" : result ? "❌ Security review: changes requested" : "⚠️ Security review didn't finish"}`,
     "",
-    result?.summary ?? `[See the logs](${runUrl})`,
+    result?.summary != null ? clean(result.summary) : `[See the logs](${runUrl})`,
     ...(ok && confidence ? ["", `**Confidence:** ${confidence}${reason ? `. ${reason}` : ""}`] : []),
     ...(rows.length ? ["", "| Severity | Where | Issue | Fix |", "|---|---|---|---|", ...rows] : []),
     formatReviewMeta({ sha, eligible, why }),

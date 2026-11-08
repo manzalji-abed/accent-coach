@@ -49,7 +49,9 @@ export function readConfig(env = process.env) {
  *   <!-- agent:review-meta {"sha":"…","eligible":true,"why":"…"} -->
  * `sha` pins it to the reviewed commit, so a later push can't inherit it.
  */
-const META_RE = /<!-- agent:review-meta (\{.*?\}) -->/;
+// Anchored to the end: the genuine marker is always the comment's last line,
+// after any model-written text (which planReview also strips of comment markers).
+const META_RE = /<!-- agent:review-meta (\{[^\n]*\}) -->\s*$/;
 export function formatReviewMeta(meta) {
   const safe = { ...meta, why: String(meta.why ?? "").replace(/-->|<!--/g, "").slice(0, 300) };
   return `<!-- agent:review-meta ${JSON.stringify(safe)} -->`;

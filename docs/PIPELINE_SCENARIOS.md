@@ -81,7 +81,20 @@ Review on #2 -> approve (high confidence)
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 6. Auto-merge on, but GitHub refuses the merge (e.g. a conflict): explains and leaves it for you
+## 6. Auto-merge on, reviewer text carries a forged 'eligible' marker (prompt injection): ignored
+
+**Result:** passed
+
+```
+me labeled "agent" on #1 -> build:start (agent label added)
+  build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
+CI on #2 -> success
+CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
+```
+
+## 7. Auto-merge on, but GitHub refuses the merge (e.g. a conflict): explains and leaves it for you
 
 **Result:** passed
 
@@ -94,7 +107,7 @@ Review on #2 -> approve (high confidence)
 Agent Review success on main -> ready (tests and review passed, high confidence)
 ```
 
-## 7. Auto-merge on, a new commit lands while the review runs: the unreviewed commit is never merged
+## 8. Auto-merge on, a new commit lands while the review runs: the unreviewed commit is never merged
 
 **Result:** passed
 
@@ -107,7 +120,7 @@ Review on #2 -> approve (high confidence)
 Agent Review success on main -> noop (no open PR for this run)
 ```
 
-## 8. Auto-merge off: even a high-confidence PR waits for you
+## 9. Auto-merge off: even a high-confidence PR waits for you
 
 **Result:** passed
 
@@ -120,7 +133,7 @@ Review on #2 -> approve (high confidence)
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 9. Unclear issue: agent stops and asks; your reply resumes it
+## 10. Unclear issue: agent stops and asks; your reply resumes it
 
 **Result:** passed
 
@@ -135,7 +148,7 @@ Review on #2 -> approve (medium confidence)
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 10. Still unclear after your answer: asks a second round, then builds
+## 11. Still unclear after your answer: asks a second round, then builds
 
 **Result:** passed
 
@@ -152,7 +165,7 @@ Review on #2 -> approve (medium confidence)
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 11. Tests fail once: agent fixes it and the PR goes green
+## 12. Tests fail once: agent fixes it and the PR goes green
 
 **Result:** passed
 
@@ -168,7 +181,7 @@ Review on #2 -> approve (medium confidence)
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 12. Tests keep failing: 3 attempts, then it stops and asks you; your guidance restarts it
+## 13. Tests keep failing: 3 attempts, then it stops and asks you; your guidance restarts it
 
 **Result:** passed
 
@@ -194,7 +207,7 @@ Review on #2 -> approve (medium confidence)
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 13. Your guidance gives it a fresh budget of 3 attempts (your guided fix counts as the first)
+## 14. Your guidance gives it a fresh budget of 3 attempts (your guided fix counts as the first)
 
 **Result:** passed
 
@@ -224,7 +237,7 @@ CI on #2 -> failure
 CI failure on agent/issue-1 -> block:ci (ci still failing after 3 fix attempts)
 ```
 
-## 14. Security review requests changes: agent fixes, review approves
+## 15. Security review requests changes: agent fixes, review approves
 
 **Result:** passed
 
@@ -242,7 +255,7 @@ Review on #2 -> approve
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 15. Review keeps rejecting: blocked after 3, merge stays impossible
+## 16. Review keeps rejecting: blocked after 3, merge stays impossible
 
 **Result:** passed
 
@@ -270,7 +283,7 @@ Review on #2 -> request_changes
 Agent Review failure on main -> block:review (review still failing after 3 fix attempts)
 ```
 
-## 16. Fixing needs a product decision: agent asks on the PR, your reply continues
+## 17. Fixing needs a product decision: agent asks on the PR, your reply continues
 
 **Result:** passed
 
@@ -288,7 +301,7 @@ Review on #2 -> approve (medium confidence)
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 17. Agent run crashes (no result): marked blocked with a log link; /agent retry recovers
+## 18. Agent run crashes (no result): marked blocked with a log link; /agent retry recovers
 
 **Result:** passed
 
@@ -303,7 +316,7 @@ Review on #2 -> approve (medium confidence)
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 18. Agent says it can't do it: explains; more detail from you restarts it
+## 19. Agent says it can't do it: explains; more detail from you restarts it
 
 **Result:** passed
 
@@ -318,7 +331,7 @@ Review on #2 -> approve (medium confidence)
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 19. Agent fix produces no change on a failing run: still counted, can't loop forever
+## 20. Agent fix produces no change on a failing run: still counted, can't loop forever
 
 **Result:** passed
 
@@ -338,7 +351,7 @@ CI on #2 -> failure
 CI failure on agent/issue-1 -> block:ci (ci still failing after 3 fix attempts)
 ```
 
-## 20. /agent stop mid-way clears everything; /agent retry continues on the same PR
+## 21. /agent stop mid-way clears everything; /agent retry continues on the same PR
 
 **Result:** passed
 
@@ -358,7 +371,7 @@ Review on #2 -> approve (medium confidence)
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 21. Removing the agent label stops it
+## 22. Removing the agent label stops it
 
 **Result:** passed
 
@@ -369,7 +382,7 @@ me unlabeled "agent" on #1 -> stop (agent label removed)
 me commented on #1: "Blue." -> noop (ordinary issue discussion)
 ```
 
-## 22. Strangers can't drive the agent (no write access)
+## 23. Strangers can't drive the agent (no write access)
 
 **Result:** passed
 
@@ -386,7 +399,7 @@ Review on #2 -> approve (medium confidence)
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 23. A stranger adding the label does nothing
+## 24. A stranger adding the label does nothing
 
 **Result:** passed
 
@@ -394,7 +407,7 @@ Agent Review success on main -> ready (tests and review passed)
 random-person labeled "agent" on #1 -> noop (random-person does not have write access)
 ```
 
-## 24. Bots and the pipeline's own comments never trigger it (no loops)
+## 25. Bots and the pipeline's own comments never trigger it (no loops)
 
 **Result:** passed
 
@@ -405,7 +418,7 @@ dependabot[bot] commented on #1: "/agent retry" -> noop (comment from a bot)
 me commented on #1: "<!-- agent:status --> echo" -> noop (comment written by the pipeline)
 ```
 
-## 25. Label added twice or while running: no duplicate runs
+## 26. Label added twice or while running: no duplicate runs
 
 **Result:** passed
 
@@ -420,7 +433,7 @@ me labeled "agent" on #1 -> noop (PR #2 is already open for this issue)
 me labeled "agent" on #3 -> noop (a run is already in progress)
 ```
 
-## 26. No Claude credentials yet: one clear setup comment; retry after adding them works
+## 27. No Claude credentials yet: one clear setup comment; retry after adding them works
 
 **Result:** passed
 
@@ -435,7 +448,7 @@ Review on #2 -> approve (medium confidence)
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 27. You close the PR without merging: labels cleared; /agent retry starts fresh
+## 28. You close the PR without merging: labels cleared; /agent retry starts fresh
 
 **Result:** passed
 
@@ -455,7 +468,7 @@ Review on #3 -> approve (medium confidence)
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 28. Your own (human) PR: reviewed, but the agent never pushes to it
+## 29. Your own (human) PR: reviewed, but the agent never pushes to it
 
 **Result:** passed
 
@@ -464,7 +477,7 @@ CI on #1 -> failure
 CI failure on feature/my-thing -> noop (human PR failed; the agent leaves those alone)
 ```
 
-## 29. Old CI result arriving after a newer push is ignored
+## 30. Old CI result arriving after a newer push is ignored
 
 **Result:** passed
 
@@ -478,7 +491,7 @@ Agent Review success on main -> ready (tests and review passed)
 CI failure on agent/issue-1 -> noop (stale run: the PR has newer commits)
 ```
 
-## 30. PR from a fork never gets agent fixes
+## 31. PR from a fork never gets agent fixes
 
 **Result:** passed
 
@@ -487,7 +500,7 @@ CI on #1 -> failure
 CI failure on agent/issue-1 -> noop (PR from a fork)
 ```
 
-## 31. Asking for a change on an open, green PR with /agent
+## 32. Asking for a change on an open, green PR with /agent
 
 **Result:** passed
 
@@ -507,7 +520,7 @@ Review on #2 -> approve (medium confidence)
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 32. Vague guidance on a PR: agent asks what you meant instead of guessing
+## 33. Vague guidance on a PR: agent asks what you meant instead of guessing
 
 **Result:** passed
 
@@ -522,7 +535,7 @@ me commented on #2: "/agent make it better" -> fix:human (/agent command on PR)
   fix agent -> no_change (Not sure which part to change.)
 ```
 
-## 33. Noise check: a full happy path posts at most 3 notifying comments
+## 34. Noise check: a full happy path posts at most 3 notifying comments
 
 **Result:** passed
 
@@ -535,7 +548,7 @@ Review on #2 -> approve (medium confidence)
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 34. PLAN.md: items become issues and run one at a time, each starting when the previous merges
+## 35. PLAN.md: items become issues and run one at a time, each starting when the previous merges
 
 **Result:** passed
 
@@ -563,7 +576,7 @@ Agent Review success on main -> ready (tests and review passed)
 PR #6 merged -> done (PR merged)
 ```
 
-## 35. PLAN.md: a blocked item pauses the queue until it's resolved
+## 36. PLAN.md: a blocked item pauses the queue until it's resolved
 
 **Result:** passed
 
@@ -585,7 +598,7 @@ Review on #4 -> approve (medium confidence)
 Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 36. PLAN.md + auto-merge: confident items ship one after another with no clicks
+## 37. PLAN.md + auto-merge: confident items ship one after another with no clicks
 
 **Result:** passed
 
@@ -604,6 +617,6 @@ Review on #4 -> approve (high confidence)
 Agent Review success on main -> ready (tests and review passed, high confidence)
 ```
 
-## 37. PLAN.md parsing handles details, checked items and existing issue refs
+## 38. PLAN.md parsing handles details, checked items and existing issue refs
 
 **Result:** passed
