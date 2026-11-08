@@ -15,7 +15,8 @@
   // Only reachable on the custom domain (behind Cloudflare Access), not on a public workers.dev URL.
   "routes": [{ "pattern": "coaccent.abedmanzalji.com", "custom_domain": true }],
   "workers_dev": false,
-  // Per-PR preview links from Workers Builds. Protect them with Access in the dashboard too.
-  "preview_urls": true,
+  // Preview URLs would be public *.workers.dev links that share GEMINI_API_KEY. Keep them off
+  // unless Cloudflare Access is enabled for preview URLs in the Worker's settings first.
+  "preview_urls": false,
   "observability": { "enabled": true }
 }
