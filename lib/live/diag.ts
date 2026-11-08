@@ -25,6 +25,11 @@ const TYPES = new Set([
   "connect-failed",
   "pause-mic",
   "resume-mic",
+  "silent-turn",
+  "mic-restart",
+  "mic-restart-failed",
+  "mic-mute",
+  "mic-unmute",
 ]);
 
 /** Allowed detail keys and the one value type each may have. */
