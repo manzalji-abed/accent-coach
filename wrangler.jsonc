@@ -1,0 +1,21 @@
+// Cloudflare Workers deploy config (Next.js via the OpenNext adapter).
+// main auto-deploys through Cloudflare Workers Builds; `npm run deploy` does the same by hand.
+// Secrets (GEMINI_API_KEY) are set with `npx wrangler secret put`, never in this file.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "accent-coach",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "accent-coach" }],
+  // Only reachable on the custom domain (behind Cloudflare Access), not on a public workers.dev URL.
+  "routes": [{ "pattern": "coaccent.abedmanzalji.com", "custom_domain": true }],
+  "workers_dev": false,
+  // Per-PR preview links from Workers Builds. Protect them with Access in the dashboard too.
+  "preview_urls": true,
+  "observability": { "enabled": true }
+}

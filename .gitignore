@@ -9,3 +9,8 @@ next-env.d.ts
 /playwright-report/
 /blob-report/
 /ui-media/
+
+# Cloudflare / OpenNext build output
+/.open-next/
+/.wrangler/
+.dev.vars*
