@@ -12,7 +12,7 @@ More in [docs/screenshots](docs/screenshots) · [walkthrough GIF](docs/walkthrou
 
 | | |
 |---|---|
-| **The app** | Onboarding (goal, accent, practice time) · free talk and role-play with flagged words · "Said vs. Expected" card with play-yours / play-native · shadowing loop · end-of-session takeaway · clarity trend, problem-sound heatmap, trouble-word bank, history · streaks · calendar reminder · installable on your phone |
+| **The app** | Onboarding (goal, accent, practice time) · **live voice** free talk and role-play (talk naturally, the coach answers out loud and you can interrupt) with flagged words · "Said vs. Expected" card with play-yours / play-native · shadowing loop · end-of-session takeaway · clarity trend, problem-sound heatmap, trouble-word bank, history · streaks · calendar reminder · installable on your phone |
 | **The pipeline** | Label an issue `agent` → it builds, opens a PR → CI + UI tests (videos on the PR) → security review → you merge (or auto-merge). It stops and asks when something is unclear or it's stuck, and your reply resumes it. |
 
 ---
@@ -30,7 +30,7 @@ Open it on your phone (same Wi-Fi, `http://<your-computer-ip>:3000`) to try the 
 
 **Deploy:** this repo deploys to Cloudflare Workers through the [OpenNext](https://opennext.js.org/cloudflare) adapter (`wrangler.jsonc`). Connect the repo in Cloudflare (Workers & Pages → Create → Import a repository) and every merge to `main` deploys. Set the key with `npx wrangler secret put GEMINI_API_KEY`. `npm run deploy` deploys by hand, and `npm run preview` runs the Workers build locally. On your phone, open the site and use *Add to Home Screen*.
 
-The default model is `gemini-3.8-flash`. Override it with `GEMINI_MODEL`.
+The default model is `gemini-3.8-flash`. Override it with `GEMINI_MODEL`. Live voice conversations use `gemini-3.8-live` (override with `GEMINI_LIVE_MODEL`; `GEMINI_LIVE_API_VERSION` defaults to `v1beta`). The browser connects to Gemini Live with a single-use token from `/api/live`, so the API key never leaves the server. Headphones give the cleanest conversation.
 
 ---
 

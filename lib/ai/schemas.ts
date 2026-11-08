@@ -46,6 +46,33 @@ export const takeawaySchema = {
   required: ["takeaway", "focus"],
 } as const;
 
+/**
+ * Parameters of the live coach's silent `review_turn` function, in the Gemini
+ * function-declaration schema dialect (upper-case type names).
+ */
+const liveFlagParams = {
+  type: "OBJECT",
+  properties: {
+    word: { type: "STRING", description: flagSchema.properties.word.description },
+    said: { type: "STRING", description: flagSchema.properties.said.description },
+    expected: { type: "STRING", description: flagSchema.properties.expected.description },
+    expectedIpa: { type: "STRING", description: flagSchema.properties.expectedIpa.description },
+    phoneme: { type: "STRING", description: flagSchema.properties.phoneme.description },
+    tip: { type: "STRING", description: flagSchema.properties.tip.description },
+  },
+  required: ["word", "said", "expected", "expectedIpa", "phoneme", "tip"],
+} as const;
+
+export const reviewToolParams = {
+  type: "OBJECT",
+  properties: {
+    transcript: { type: "STRING", description: "What the learner just said, verbatim, in normal spelling" },
+    clarity: { type: "INTEGER", description: "Pronunciation clarity of that turn, 0-100: accuracy, rhythm and stress" },
+    flags: { type: "ARRAY", items: liveFlagParams, description: "Up to 3 words a listener would notice as mispronounced, most important first. Empty if none." },
+  },
+  required: ["clarity", "flags"],
+} as const;
+
 /* ---- Defensive normalizers: never trust model output blindly ---- */
 
 const str = (v: unknown, max = 500) => (typeof v === "string" ? v.trim().slice(0, max) : "");
@@ -92,6 +119,17 @@ export function normalizeShadow(raw: unknown): ShadowResult {
     flags: normalizeFlags(r.flags, transcript),
     feedback: str(r.feedback, 300),
   };
+}
+
+/**
+ * A live `review_turn` call, checked like any other model output. `heard` is
+ * what the live transcription caught; the model's own transcript fills in if
+ * transcription came back empty. Flags must match words in that text.
+ */
+export function normalizeReview(raw: unknown, heard: string): { transcript: string; clarity: number; flags: WordFlag[] } {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const transcript = str(heard, 2000) || str(r.transcript, 2000);
+  return { transcript, clarity: score(r.clarity), flags: normalizeFlags(r.flags, transcript) };
 }
 
 export function normalizeTakeaway(raw: unknown): Takeaway {

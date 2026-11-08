@@ -4,10 +4,10 @@ import { onboard, speakTurn } from "./helpers";
 // Always recorded: this video becomes the GIF on each PR.
 test.use({ video: { mode: "on", size: { width: 412, height: 839 } } });
 
-test("@showcase speak, see flagged words, open Said vs Expected, finish with a takeaway", async ({ page }) => {
+test("@showcase live talk, see flagged words, open Said vs Expected, finish with a takeaway", async ({ page }) => {
   await onboard(page);
   await page.getByRole("link", { name: /Free talk/ }).click();
-  await expect(page.getByTestId("dock-hint")).toHaveText("Tap the mic and answer out loud");
+  await expect(page.getByTestId("dock-hint")).toHaveText("Tap the mic to start talking with your coach");
 
   await speakTurn(page);
   const bubble = page.getByTestId("user-bubble").first();

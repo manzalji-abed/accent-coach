@@ -8,12 +8,17 @@ export const MAX_AUDIO_BYTES = 2 * 1024 * 1024; // ~60 s of 16 kHz mono WAV
  * swap for a shared store (e.g. Upstash) if you deploy multiple instances.
  */
 const hits = new Map<string, number[]>();
-export function rateLimited(req: Request, limit = 30, windowMs = 60_000): boolean {
+/**
+ * `bucket` keeps routes with very different limits apart, so a burst of quick
+ * calls on one (shadowing attempts) doesn't block a stricter one (starting a live session).
+ */
+export function rateLimited(req: Request, limit = 30, windowMs = 60_000, bucket = "api"): boolean {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+  const key = `${bucket}:${ip}`;
   const now = Date.now();
-  const recent = (hits.get(ip) ?? []).filter((t) => now - t < windowMs);
+  const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
   recent.push(now);
-  hits.set(ip, recent);
+  hits.set(key, recent);
   if (hits.size > 10_000) hits.clear();
   return recent.length > limit;
 }
