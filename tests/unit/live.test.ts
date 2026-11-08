@@ -209,3 +209,12 @@ describe("live session config (locked into the token)", () => {
     expect(DEFAULT_LIVE_MODEL).toBe("gemini-3.8-live");
   });
 });
+
+describe("rate limiting identity", () => {
+  it("trusts Cloudflare's client IP over a spoofable forwarded header", () => {
+    const spoofA = new Request("https://x/api", { headers: { "cf-connecting-ip": "198.51.100.9", "x-forwarded-for": "1.1.1.1" } });
+    const spoofB = new Request("https://x/api", { headers: { "cf-connecting-ip": "198.51.100.9", "x-forwarded-for": "2.2.2.2" } });
+    for (let i = 0; i < 2; i++) rateLimited(spoofA, 2, 60_000, "ident");
+    expect(rateLimited(spoofB, 2, 60_000, "ident")).toBe(true); // changing x-forwarded-for doesn't reset the limit
+  });
+});

@@ -13,7 +13,8 @@ const hits = new Map<string, number[]>();
  * calls on one (shadowing attempts) doesn't block a stricter one (starting a live session).
  */
 export function rateLimited(req: Request, limit = 30, windowMs = 60_000, bucket = "api"): boolean {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+  // On Cloudflare, cf-connecting-ip is set by Cloudflare itself and can't be spoofed by the client.
+  const ip = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
   const key = `${bucket}:${ip}`;
   const now = Date.now();
   const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);

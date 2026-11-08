@@ -71,6 +71,7 @@ export function useLiveCoach(opts: {
     sources: new Set<AudioBufferSourceNode>(),
     started: false, // the coach has opened the conversation in this page visit
     closing: false,
+    gen: 0, // bumped on every start and teardown; see start()
     micReady: Promise.resolve() as Promise<void>,
     onFirstAudio: null as null | (() => void),
   });
@@ -263,6 +264,7 @@ export function useLiveCoach(opts: {
   // ---- lifecycle --------------------------------------------------------------
   function teardown() {
     const s = r.current;
+    s.gen++; // any start() still in flight is now stale and must not open a session
     s.closing = true;
     s.listening = false;
     s.driver?.close();
@@ -284,21 +286,31 @@ export function useLiveCoach(opts: {
     setStatus("connecting");
     const s = r.current;
     if (!navigator.mediaDevices?.getUserMedia || typeof AudioWorkletNode === "undefined") return fail("unsupported");
+    // Each start gets a generation number. If Finish, leaving the page or an error tears things
+    // down while we're still awaiting, the number moves on and this attempt quietly stops,
+    // closing anything it opened late, so no session is ever left running unowned.
+    const gen = ++s.gen;
+    const stale = () => s.gen !== gen;
+    s.closing = false;
     // Create the audio context inside the tap itself: iOS keeps it silent if it's made after an await.
     const ctx = new AudioContext();
     s.ctx = ctx;
     void ctx.resume().catch(() => {});
+    let stream: MediaStream;
     try {
-      s.stream = await navigator.mediaDevices.getUserMedia({
+      stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
       });
     } catch (e) {
+      if (stale()) return;
       return fail((e as Error).name === "NotAllowedError" || (e as Error).name === "SecurityError" ? "denied" : "unsupported");
     }
-    s.closing = false;
+    if (stale()) return stream.getTracks().forEach((t) => t.stop());
+    s.stream = stream;
     try {
       await ctx.audioWorklet.addModule("/live-mic-worklet.js");
-      const source = ctx.createMediaStreamSource(s.stream);
+      if (stale()) return;
+      const source = ctx.createMediaStreamSource(stream);
       const node = new AudioWorkletNode(ctx, "live-mic");
       const sink = ctx.createGain();
       sink.gain.value = 0; // keeps the worklet running without playing the mic back
@@ -320,6 +332,7 @@ export function useLiveCoach(opts: {
         s.driver.sendAudio(echo ? micChunkToLive(new Float32Array(e.data.length), ctx.sampleRate).base64 : base64);
       };
     } catch {
+      if (stale()) return;
       return fail("unsupported");
     }
 
@@ -331,22 +344,28 @@ export function useLiveCoach(opts: {
         body: JSON.stringify({ scenarioId: optsRef.current.scenarioId, accent: optsRef.current.accent }),
       });
       data = await res.json().catch(() => ({}));
+      if (stale()) return;
       if (!res.ok) return fail("network", data.error || LIVE_MESSAGES.network);
     } catch {
+      if (stale()) return;
       return fail("network");
     }
 
     // Gemini speaks the opener first, so its words fill the opener bubble. Demo mode reads the opener
     // out locally, so its first scripted reply needs a bubble of its own.
     s.transcript = makeTranscript(s.started || data.mock ? undefined : optsRef.current.openerId);
+    let driver: Driver;
     try {
-      s.driver = data.mock ? mockDriver() : await liveDriver({ token: data.token!, model: data.model!, apiVersion: data.apiVersion! });
+      driver = data.mock ? mockDriver() : await liveDriver({ token: data.token!, model: data.model!, apiVersion: data.apiVersion! });
     } catch {
+      if (stale()) return;
       return fail("network");
     }
+    if (stale()) return driver.close(); // stopped while connecting: don't leave a session running
+    s.driver = driver;
     // Only say "Listening" once the mic is really delivering audio (some phones take a moment to warm up).
     await Promise.race([s.micReady, new Promise((resolve) => setTimeout(resolve, MIC_WARMUP_MAX_MS))]);
-    if (s.closing) return;
+    if (stale()) return;
     s.started = true;
     s.listening = true;
     s.driver.setListening(true);
