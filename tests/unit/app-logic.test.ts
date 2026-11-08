@@ -5,6 +5,7 @@ import { dailyReminderIcs } from "@/lib/ics";
 import { currentStreak, mergeTroubleWords, phonemeHeatmap, sessionClarity } from "@/lib/progress";
 import { normalizeShadow, normalizeTurn } from "@/lib/ai/schemas";
 import { mockShadow, mockTakeaway, mockTurn } from "@/lib/ai/mock";
+import { aiErrorFrom, collectStreamText, GEMINI_TIMEOUT_MS } from "@/lib/ai/gemini";
 import { lessonForDay, SCENARIOS, SHADOW_SENTENCES } from "@/lib/scenarios";
 import type { Session, WordFlag } from "@/lib/types";
 
@@ -167,5 +168,29 @@ describe("content and demo mode", () => {
     expect(mockShadow("Could I get the check, please?", 0).pass).toBe(false);
     expect(mockShadow("Could I get the check, please?", 1).pass).toBe(true);
     expect(mockTakeaway([{ id: "1", role: "user", text: "x", flags: [flag("x", "/θ/")] }]).takeaway).toContain("/θ/");
+  });
+});
+
+describe("Gemini client helpers", () => {
+  it("joins streamed chunks into the full answer, skipping empty ones", async () => {
+    async function* chunks() {
+      yield { text: '{"reply":' };
+      yield {};
+      yield { text: '"Nice job"}' };
+    }
+    expect(JSON.parse(await collectStreamText(chunks()))).toEqual({ reply: "Nice job" });
+  });
+
+  it("maps failures to messages that say what to do next", () => {
+    expect(aiErrorFrom({ status: 429 })).toMatchObject({ status: 429, message: expect.stringMatching(/busy/) });
+    for (const err of [{ name: "TimeoutError" }, { name: "AbortError" }, { status: 524 }, { status: 504 }]) {
+      expect(aiErrorFrom(err)).toMatchObject({ status: 504, message: expect.stringMatching(/took too long.*shorter recording/) });
+    }
+    expect(aiErrorFrom(new Error("boom"))).toMatchObject({ status: 502, message: expect.stringMatching(/Couldn't reach the coach/) });
+    expect(aiErrorFrom(undefined).status).toBe(502);
+  });
+
+  it("times out well before Cloudflare's 100-second limit", () => {
+    expect(GEMINI_TIMEOUT_MS).toBeLessThan(100_000);
   });
 });
