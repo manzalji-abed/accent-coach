@@ -6,8 +6,15 @@ import type { Accent, WordFlag } from "@/lib/types";
 import { SpeakerIcon } from "./icons";
 
 /** The "Said vs. Expected" card, as a bottom sheet so it's reachable one-handed. */
-export function WordSheet(props: { flag: WordFlag; accent: Accent; clipUrl?: string; onClose: () => void }) {
-  const { flag, accent, clipUrl, onClose } = props;
+export function WordSheet(props: {
+  flag: WordFlag;
+  accent: Accent;
+  clipUrl?: string;
+  /** Plays the clip through the live session's audio (loud speaker while the mic is on). Returns false if it can't. */
+  playClip?: (url: string) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const { flag, accent, clipUrl, playClip, onClose } = props;
   const closeRef = useRef<HTMLButtonElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -21,9 +28,11 @@ export function WordSheet(props: { flag: WordFlag; accent: Accent; clipUrl?: str
     };
   }, [onClose]);
 
-  const playMine = () => {
+  const playMine = async () => {
     if (!clipUrl) return;
     audioRef.current?.pause();
+    // During a live session phones route plain <audio> to the quiet earpiece; the session's audio engine uses the speaker.
+    if (playClip && (await playClip(clipUrl))) return;
     audioRef.current = new Audio(clipUrl);
     void audioRef.current.play();
   };

@@ -4,7 +4,7 @@ import { onboard, speakTurn } from "./helpers";
 // Always recorded: this video becomes the GIF on each PR.
 test.use({ video: { mode: "on", size: { width: 412, height: 839 } } });
 
-test("@showcase live talk, see flagged words, open Said vs Expected, finish with a takeaway", async ({ page }) => {
+test("@showcase live talk, see sentence fixes and flagged words, open Said vs Expected, finish with a takeaway", async ({ page }) => {
   await onboard(page);
   await page.getByRole("link", { name: /Free talk/ }).click();
   await expect(page.getByTestId("dock-hint")).toHaveText("Tap the mic to start talking with your coach");
@@ -14,6 +14,9 @@ test("@showcase live talk, see flagged words, open Said vs Expected, finish with
   await expect(bubble).toContainText("comfortable");
   await expect(bubble.getByRole("button", { name: /think: see how to say it/ })).toBeVisible();
   await expect(bubble.getByLabel(/Clarity 78 percent/)).toBeVisible();
+  // Whole-sentence fix, not just word by word.
+  await expect(bubble.getByTestId("correction")).toContainText("Better: I feel comfortable talking about my work.");
+  await expect(bubble.getByTestId("correction")).toContainText("Drop 'I think'");
 
   await bubble.getByRole("button", { name: /comfortable/ }).click();
   const sheet = page.getByTestId("word-sheet");
@@ -30,6 +33,8 @@ test("@showcase live talk, see flagged words, open Said vs Expected, finish with
   await page.getByRole("button", { name: "Finish" }).click();
   await expect(page.getByTestId("session-score")).toContainText("85");
   await expect(page.getByTestId("takeaway")).toContainText("Your main takeaway today");
+  await expect(page.getByTestId("summary-corrections")).toContainText("You said: I think I feel comfortable talking about my work.");
+  await expect(page.getByTestId("summary-corrections")).toContainText("Better: I feel comfortable talking about my work.");
   await page.waitForTimeout(600);
 
   await page.getByRole("link", { name: "Done" }).click();

@@ -25,12 +25,20 @@ export interface WordFlag {
   tip: string;
 }
 
+/** A whole-sentence fix: a more natural or correct way to say what the learner meant. */
+export interface Correction {
+  better: string;
+  /** one short reason, e.g. "Use 'went' for the past" */
+  why: string;
+}
+
 export interface TurnAnalysis {
   transcript: string;
   reply: string;
   /** 0-100 */
   clarity: number;
   flags: WordFlag[];
+  correction?: Correction;
 }
 
 export interface ShadowResult {
@@ -54,6 +62,7 @@ export interface Turn {
   text: string;
   clarity?: number;
   flags?: WordFlag[];
+  correction?: Correction;
 }
 
 export interface Session {

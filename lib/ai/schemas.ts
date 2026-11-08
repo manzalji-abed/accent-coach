@@ -1,4 +1,4 @@
-import type { ShadowResult, Takeaway, TurnAnalysis, WordFlag } from "../types";
+import type { Correction, ShadowResult, Takeaway, TurnAnalysis, WordFlag } from "../types";
 
 /** JSON Schemas handed to Gemini so it must answer in exactly this shape. */
 const flagSchema = {
@@ -69,8 +69,13 @@ export const reviewToolParams = {
     transcript: { type: "STRING", description: "What the learner just said, verbatim, in normal spelling" },
     clarity: { type: "INTEGER", description: "Pronunciation clarity of that turn, 0-100: accuracy, rhythm and stress" },
     flags: { type: "ARRAY", items: liveFlagParams, description: "Up to 3 words a listener would notice as mispronounced, most important first. Empty if none." },
+    better: {
+      type: "STRING",
+      description: "A more natural or correct way to say the learner's whole turn (grammar, word choice, phrasing), keeping their meaning. Empty if it was already natural.",
+    },
+    why: { type: "STRING", description: "If 'better' is set: one short, friendly reason, under 15 words, e.g. \"Use 'went' for the past.\"" },
   },
-  required: ["clarity", "flags"],
+  required: ["clarity", "flags", "better", "why"],
 } as const;
 
 /* ---- Defensive normalizers: never trust model output blindly ---- */
@@ -126,10 +131,20 @@ export function normalizeShadow(raw: unknown): ShadowResult {
  * what the live transcription caught; the model's own transcript fills in if
  * transcription came back empty. Flags must match words in that text.
  */
-export function normalizeReview(raw: unknown, heard: string): { transcript: string; clarity: number; flags: WordFlag[] } {
+const words = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9' ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+export function normalizeReview(raw: unknown, heard: string): { transcript: string; clarity: number; flags: WordFlag[]; correction?: Correction } {
   const r = (raw ?? {}) as Record<string, unknown>;
   const transcript = str(heard, 2000) || str(r.transcript, 2000);
-  return { transcript, clarity: score(r.clarity), flags: normalizeFlags(r.flags, transcript) };
+  const better = str(r.better, 300);
+  // A "correction" that only repeats what they said (ignoring case and punctuation) isn't one.
+  const correction = better && transcript && words(better) !== words(transcript) ? { better, why: str(r.why, 200) } : undefined;
+  return { transcript, clarity: score(r.clarity), flags: normalizeFlags(r.flags, transcript), ...(correction ? { correction } : {}) };
 }
 
 export function normalizeTakeaway(raw: unknown): Takeaway {

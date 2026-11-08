@@ -5,7 +5,7 @@ import { mockTurn } from "../ai/mock";
 import { REVIEW_TOOL } from "../ai/prompts";
 import { speak, stopSpeaking } from "../speech";
 import type { Accent, Turn } from "../types";
-import { base64ToBytes, ClipBuffer, LIVE_INPUT_MIME, LIVE_INPUT_RATE, LIVE_OUTPUT_RATE, micChunkToLive, pcm16BytesToFloat, speechLevel } from "./pcm";
+import { base64ToBytes, ClipBuffer, LIVE_INPUT_MIME, LIVE_INPUT_RATE, LIVE_OUTPUT_RATE, micChunkToLive, pcm16BytesToFloat, SPEECH_THRESHOLD, speechLevel } from "./pcm";
 import { LiveTranscript, type TranscriptEvents } from "./transcript";
 
 export type LiveStatus = "idle" | "connecting" | "listening" | "paused";
@@ -23,18 +23,31 @@ export interface LiveCallbacks extends TranscriptEvents {
   userClip(id: string, url: string, seconds: number): void;
 }
 
-/** While the coach is talking, only clearly louder sound counts as the learner jumping in (not speaker echo). */
-const BARGE_IN_LEVEL = 0.45;
+/** While the coach's voice is playing, only clearly louder sound counts as the learner jumping in (not speaker echo). */
+const BARGE_IN_LEVEL = 0.3;
 /** Demo mode: how long the learner "talks" before their scripted turn appears. */
 const MOCK_TURN_MS = 1200;
 const MOCK_NEXT_TURN_MS = 3000;
 /** Longest we wait for the mic's first audio before showing "Listening" anyway. */
 const MIC_WARMUP_MAX_MS = 5000;
+/** If the learner spoke and the coach sends nothing at all for this long, the session is stuck: restart it. */
+const STUCK_AFTER_MS = 9000;
+const MAX_RESTARTS_PER_MIN = 2;
+/** How often diagnostics are sent to the server log. */
+const DIAG_FLUSH_MS = 5000;
 
 interface Driver {
   sendAudio(base64: string): void;
   setListening(on: boolean): void;
   close(): void;
+}
+
+interface TokenResponse {
+  mock?: boolean;
+  token?: string;
+  model?: string;
+  apiVersion?: string;
+  error?: string;
 }
 
 /**
@@ -47,7 +60,7 @@ export function useLiveCoach(opts: {
   accent: Accent;
   opener: string;
   openerId: string;
-  /** Latest turns, so a reconnect can tell the coach what was already said. */
+  /** Latest turns, so a restart can tell the coach what was already said. */
   turns: () => Turn[];
   newId: () => string;
   callbacks: LiveCallbacks;
@@ -69,20 +82,48 @@ export function useLiveCoach(opts: {
     listening: false,
     playhead: 0,
     sources: new Set<AudioBufferSourceNode>(),
+    /** Wall-clock time (performance.now) the coach's queued voice ends. Doesn't depend on the audio engine running. */
+    playEndsAt: 0,
+    speakingTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+    /** While the learner replays their own clip, the mic must not forward it to the coach. */
+    clipPlayingUntil: 0,
+    clipSource: null as AudioBufferSourceNode | null,
+    /** End of the last learner turn or coach reply: a new learner clip starts after this. */
+    lastClipEnd: 0,
     started: false, // the coach has opened the conversation in this page visit
     closing: false,
     gen: 0, // bumped on every start and teardown; see start()
     micReady: Promise.resolve() as Promise<void>,
     onFirstAudio: null as null | (() => void),
+    // stuck-session watchdog: speech heard since the coach last produced anything (voice, words or feedback)
+    lastModelAt: 0,
+    lastSpeechAt: 0,
+    speechMsSinceModel: 0,
+    restarts: [] as number[],
+    restarting: false,
+    // diagnostics (real sessions only)
+    diag: null as null | ((type: string, detail?: Record<string, unknown>) => void),
+    stats: { sent: 0, gated: 0, msgs: 0, audio: 0, inText: 0, outText: 0, tools: 0, turns: 0, interrupts: 0 },
   });
 
   const fail = useCallback((kind: LiveError, message = LIVE_MESSAGES[kind]) => {
+    r.current.diag?.("fail", { kind });
     teardown();
     setError({ kind, message });
     setStatus("idle");
   }, []);
 
   // ---- audio out --------------------------------------------------------
+  const coachAudible = () => performance.now() < r.current.playEndsAt;
+
+  const markSpeakingUntil = (endsAt: number) => {
+    const s = r.current;
+    s.playEndsAt = endsAt;
+    clearTimeout(s.speakingTimer);
+    setCoachSpeaking(endsAt > performance.now());
+    s.speakingTimer = setTimeout(() => setCoachSpeaking(false), Math.max(0, endsAt - performance.now()) + 50);
+  };
+
   const stopPlayback = () => {
     const s = r.current;
     s.sources.forEach((src) => {
@@ -94,29 +135,53 @@ export function useLiveCoach(opts: {
     });
     s.sources.clear();
     s.playhead = 0;
-    setCoachSpeaking(false);
+    markSpeakingUntil(0);
   };
 
   const play = (base64: string) => {
     const s = r.current;
-    if (!s.ctx) return;
+    const ctx = s.ctx;
+    if (!ctx) return;
     const samples = pcm16BytesToFloat(base64ToBytes(base64));
     if (!samples.length) return;
-    const buffer = s.ctx.createBuffer(1, samples.length, LIVE_OUTPUT_RATE);
+    const buffer = ctx.createBuffer(1, samples.length, LIVE_OUTPUT_RATE);
     buffer.copyToChannel(samples, 0);
-    const src = s.ctx.createBufferSource();
+    const src = ctx.createBufferSource();
     src.buffer = buffer;
-    src.connect(s.ctx.destination);
-    const at = Math.max(s.ctx.currentTime + 0.02, s.playhead);
+    src.connect(ctx.destination);
+    const at = Math.max(ctx.currentTime + 0.02, s.playhead);
     src.start(at);
     s.playhead = at + buffer.duration;
     s.sources.add(src);
-    setCoachSpeaking(true);
-    src.onended = () => {
-      s.sources.delete(src);
-      if (!s.sources.size) setCoachSpeaking(false);
-    };
+    src.onended = () => s.sources.delete(src);
+    // Track the end on the wall clock: if the phone pauses the audio engine, the
+    // echo guard still lifts on time instead of muting the learner forever.
+    markSpeakingUntil(performance.now() + (s.playhead - ctx.currentTime) * 1000);
   };
+
+  /** Play the learner's own clip through the live audio engine (loud speaker, not the earpiece). */
+  const playClip = useCallback(async (url: string): Promise<boolean> => {
+    const s = r.current;
+    const ctx = s.ctx;
+    if (!ctx || ctx.state === "closed") return false;
+    try {
+      const buffer = await ctx.decodeAudioData(await (await fetch(url)).arrayBuffer());
+      try {
+        s.clipSource?.stop();
+      } catch {
+        /* already stopped */
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(ctx.destination);
+      src.start();
+      s.clipSource = src;
+      s.clipPlayingUntil = performance.now() + buffer.duration * 1000 + 200;
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
 
   // ---- transcript wiring ----------------------------------------------------
   const makeTranscript = (firstCoachId?: string) =>
@@ -124,10 +189,18 @@ export function useLiveCoach(opts: {
       {
         userText: (id, text) => optsRef.current.callbacks.userText(id, text),
         coachText: (id, text) => optsRef.current.callbacks.coachText(id, text),
-        review: (id, review) => optsRef.current.callbacks.review(id, review),
+        review: (id, review) => {
+          r.current.diag?.("review", { flags: review.flags.length, correction: Boolean(review.correction), clarity: review.clarity });
+          optsRef.current.callbacks.review(id, review);
+        },
         userDone: (id, startedAt, endedAt) => {
+          const s = r.current;
           optsRef.current.callbacks.userDone(id, startedAt, endedAt);
-          const samples = r.current.clips.slice(startedAt, endedAt);
+          // Cut the clip from where the learner actually spoke since the last turn ended.
+          const from = Math.max(s.lastClipEnd, endedAt - 30_000);
+          const span = s.clips.speechSpan(from, endedAt);
+          const samples = span ? s.clips.slice(span.start, span.end) : s.clips.slice(Math.max(from, endedAt - 4000), endedAt);
+          s.lastClipEnd = endedAt;
           if (samples.length) {
             const url = URL.createObjectURL(new Blob([encodeWav(samples, LIVE_INPUT_RATE)], { type: "audio/wav" }));
             optsRef.current.callbacks.userClip(id, url, samples.length / LIVE_INPUT_RATE);
@@ -137,6 +210,38 @@ export function useLiveCoach(opts: {
       optsRef.current.newId,
       firstCoachId,
     );
+
+  // ---- diagnostics ------------------------------------------------------------
+  /**
+   * Real sessions report connection events and counters (never what was said)
+   * to /api/live-log, so problems on the phone show up in the server logs.
+   */
+  const startDiagnostics = (meta: Record<string, unknown>) => {
+    const s = r.current;
+    const queue: { t: number; type: string; detail?: Record<string, unknown> }[] = [];
+    const t0 = performance.now();
+    const flush = (beacon = false) => {
+      if (!queue.length) return;
+      const body = JSON.stringify({ events: queue.splice(0, 40) });
+      if (beacon && navigator.sendBeacon) navigator.sendBeacon("/api/live-log", new Blob([body], { type: "application/json" }));
+      else void fetch("/api/live-log", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {});
+    };
+    s.diag = (type, detail) => {
+      queue.push({ t: Math.round(performance.now() - t0), type, detail });
+      if (queue.length >= 40) flush();
+    };
+    s.diag("start", { ...meta, ua: navigator.userAgent.slice(0, 120) });
+    const timer = setInterval(() => {
+      s.diag?.("stats", { ...s.stats, ctx: s.ctx?.state, listening: s.listening, coachAudible: coachAudible() });
+      flush();
+    }, DIAG_FLUSH_MS);
+    return () => {
+      clearInterval(timer);
+      s.diag?.("end", { ...s.stats });
+      flush(true);
+      s.diag = null;
+    };
+  };
 
   // ---- drivers --------------------------------------------------------------
   /** Scripted conversation for demo mode and UI tests: one learner turn per stretch of listening. */
@@ -150,7 +255,7 @@ export function useLiveCoach(opts: {
       userTurns++;
       const now = performance.now();
       t.heardUser(line.transcript, now);
-      t.reviewed({ transcript: line.transcript, clarity: line.clarity, flags: line.flags });
+      t.reviewed({ transcript: line.transcript, clarity: line.clarity, flags: line.flags, better: line.correction?.better ?? "", why: line.correction?.why ?? "" });
       t.heardCoach(line.reply, now);
       t.coachDone();
       speak(line.reply, optsRef.current.accent);
@@ -176,20 +281,31 @@ export function useLiveCoach(opts: {
   };
 
   /** Real Gemini Live session, opened straight from the browser with the single-use token. */
-  const liveDriver = async (token: { token: string; model: string; apiVersion: string }): Promise<Driver> => {
+  const liveDriver = async (token: TokenResponse): Promise<Driver> => {
     const { GoogleGenAI, Modality, FunctionResponseScheduling } = await import("@google/genai");
-    const ai = new GoogleGenAI({ apiKey: token.token, httpOptions: { apiVersion: token.apiVersion } });
+    const ai = new GoogleGenAI({ apiKey: token.token!, httpOptions: { apiVersion: token.apiVersion } });
     let handle: string | undefined;
     let session: Awaited<ReturnType<typeof ai.live.connect>> | null = null;
+    const s = r.current;
 
     const onMessage = (msg: import("@google/genai").LiveServerMessage) => {
-      const t = r.current.transcript;
+      const t = s.transcript;
       if (!t) return;
       const now = performance.now();
+      s.stats.msgs++;
+      const modelSpoke = Boolean(msg.toolCall || msg.serverContent?.modelTurn || msg.serverContent?.outputTranscription || msg.serverContent?.turnComplete);
+      if (modelSpoke) {
+        s.lastModelAt = now;
+        s.speechMsSinceModel = 0;
+      }
       if (msg.sessionResumptionUpdate?.resumable && msg.sessionResumptionUpdate.newHandle) handle = msg.sessionResumptionUpdate.newHandle;
-      if (msg.goAway) void reconnect();
+      if (msg.goAway) {
+        s.diag?.("goaway", { timeLeft: msg.goAway.timeLeft });
+        void reconnect();
+      }
       const calls = msg.toolCall?.functionCalls ?? [];
       if (calls.length) {
+        s.stats.tools += calls.length;
         for (const call of calls) if (call.name === REVIEW_TOOL) t.reviewed(call.args);
         session?.sendToolResponse({
           functionResponses: calls.map((c) => ({ id: c.id, name: c.name, response: { ok: true }, scheduling: FunctionResponseScheduling.SILENT })),
@@ -197,37 +313,58 @@ export function useLiveCoach(opts: {
       }
       const sc = msg.serverContent;
       if (!sc) return;
-      if (sc.inputTranscription?.text) t.heardUser(sc.inputTranscription.text, now);
+      if (sc.inputTranscription?.text) {
+        s.stats.inText++;
+        t.heardUser(sc.inputTranscription.text, now);
+      }
       for (const part of sc.modelTurn?.parts ?? []) {
         if (part.inlineData?.data) {
+          s.stats.audio++;
           t.coachAudio(now);
           play(part.inlineData.data);
         }
       }
-      if (sc.outputTranscription?.text) t.heardCoach(sc.outputTranscription.text, now);
+      if (sc.outputTranscription?.text) {
+        s.stats.outText++;
+        t.heardCoach(sc.outputTranscription.text, now);
+      }
       if (sc.interrupted) {
+        s.stats.interrupts++;
         stopPlayback();
         t.coachDone();
       }
-      if (sc.turnComplete) t.coachDone();
+      if (sc.turnComplete) {
+        s.stats.turns++;
+        t.coachDone();
+        // The learner's next clip starts once the coach has finished talking.
+        s.lastClipEnd = Math.max(s.lastClipEnd, now, s.playEndsAt);
+      }
     };
 
     const open = async (resume?: string) => {
-      const s = await ai.live.connect({
-        model: token.model,
+      const next = await ai.live.connect({
+        model: token.model!,
         config: { responseModalities: [Modality.AUDIO], ...(resume ? { sessionResumption: { handle: resume } } : {}) },
         callbacks: {
+          onopen: () => s.diag?.("open", { resume: Boolean(resume) }),
           onmessage: onMessage,
-          onerror: () => {
-            if (!r.current.closing) fail("dropped");
+          onerror: (e: ErrorEvent) => {
+            s.diag?.("ws-error", { message: String(e?.message ?? "").slice(0, 200) });
+            if (!s.closing && session === next) fail("dropped");
           },
-          onclose: () => {
-            if (!r.current.closing && session === s) fail("dropped");
+          onclose: (e: CloseEvent) => {
+            s.diag?.("ws-close", { code: e?.code, reason: String(e?.reason ?? "").slice(0, 200), current: session === next });
+            if (!s.closing && session === next) fail("dropped");
           },
         },
       });
-      session = s;
-      return s;
+      // Finish or leaving may have happened while we were connecting.
+      if (s.closing) {
+        next.close();
+        throw new Error("closed while connecting");
+      }
+      session = next;
+      return next;
     };
 
     // The ~10-minute connection limit: hop to a fresh connection on the same session.
@@ -238,38 +375,96 @@ export function useLiveCoach(opts: {
         session = null;
         old.close();
         await open(handle);
-      } catch {
-        fail("dropped");
+        s.diag?.("resumed");
+      } catch (e) {
+        s.diag?.("resume-failed", { message: String((e as Error)?.message ?? "").slice(0, 200) });
+        if (!s.closing) fail("dropped");
       }
     };
 
     const first = await open();
     const history = LiveTranscript.historyText(optsRef.current.turns());
-    const kickoff = r.current.started
+    const kickoff = s.started
       ? `(We were cut off. Here is the conversation so far:\n${history}\nPick up naturally from there. Don't repeat your greeting.)`
       : "(The learner just joined. Say your opening line now.)";
     first.sendClientContent({ turns: [{ role: "user", parts: [{ text: kickoff }] }], turnComplete: true });
 
     return {
-      sendAudio: (data) => session?.sendRealtimeInput({ audio: { data, mimeType: LIVE_INPUT_MIME } }),
+      sendAudio: (data) => {
+        s.stats.sent++;
+        session?.sendRealtimeInput({ audio: { data, mimeType: LIVE_INPUT_MIME } });
+      },
       setListening: () => {},
       close: () => {
-        const s = session;
+        const sess = session;
         session = null;
-        s?.close();
+        sess?.close();
       },
     };
   };
 
+  const fetchToken = async (): Promise<TokenResponse & { ok: boolean }> => {
+    const res = await fetch("/api/live", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scenarioId: optsRef.current.scenarioId, accent: optsRef.current.accent }),
+    });
+    const data = (await res.json().catch(() => ({}))) as TokenResponse;
+    return { ...data, ok: res.ok };
+  };
+
+  /**
+   * A session that hears the learner but never answers is stuck (seen on phones).
+   * Swap in a fresh session with the conversation so far, keeping the mic and screen as they are.
+   */
+  const restart = async (reason: string) => {
+    const s = r.current;
+    const now = performance.now();
+    s.restarts = s.restarts.filter((t) => now - t < 60_000);
+    if (s.restarting || s.restarts.length >= MAX_RESTARTS_PER_MIN) return fail("dropped");
+    s.restarts.push(now);
+    s.restarting = true;
+    s.diag?.("restart", { reason });
+    const gen = s.gen;
+    s.driver?.close();
+    s.driver = null;
+    stopPlayback();
+    try {
+      const data = await fetchToken();
+      if (s.gen !== gen) return;
+      if (!data.ok || data.mock) return fail("dropped");
+      s.transcript = makeTranscript();
+      const driver = await liveDriver(data);
+      if (s.gen !== gen) return driver.close();
+      s.driver = driver;
+      s.lastModelAt = performance.now();
+      s.speechMsSinceModel = 0;
+    } catch {
+      if (s.gen === gen) fail("dropped");
+    } finally {
+      s.restarting = false;
+    }
+  };
+
   // ---- lifecycle --------------------------------------------------------------
+  const stopDiagRef = useRef<null | (() => void)>(null);
+  const watchdogRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+
   function teardown() {
     const s = r.current;
     s.gen++; // any start() still in flight is now stale and must not open a session
     s.closing = true;
     s.listening = false;
+    clearInterval(watchdogRef.current);
     s.driver?.close();
     s.driver = null;
     stopPlayback();
+    try {
+      s.clipSource?.stop();
+    } catch {
+      /* already stopped */
+    }
+    s.clipSource = null;
     s.node?.port.close();
     s.node?.disconnect();
     s.node = null;
@@ -278,6 +473,9 @@ export function useLiveCoach(opts: {
     void s.ctx?.close().catch(() => {});
     s.ctx = null;
     s.clips.clear();
+    s.lastClipEnd = 0;
+    stopDiagRef.current?.();
+    stopDiagRef.current = null;
     setLevel(0);
   }
 
@@ -296,6 +494,11 @@ export function useLiveCoach(opts: {
     const ctx = new AudioContext();
     s.ctx = ctx;
     void ctx.resume().catch(() => {});
+    // Phones pause the audio engine on route changes or interruptions; resume it.
+    ctx.onstatechange = () => {
+      s.diag?.("ctx-state", { state: ctx.state });
+      if (ctx.state !== "running" && ctx.state !== "closed" && !s.closing) void ctx.resume().catch(() => {});
+    };
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -322,13 +525,20 @@ export function useLiveCoach(opts: {
         s.onFirstAudio = null;
         const lvl = speechLevel(e.data);
         setLevel(s.listening ? lvl : 0);
+        const now = performance.now();
         const { base64, pcm16k } = micChunkToLive(e.data, ctx.sampleRate);
         // Buffered from the moment the mic opens (kept only on this device), so the
         // start of a turn is there for "Play yours" even if connecting was slow.
-        s.clips.push(pcm16k, performance.now());
+        s.clips.push(pcm16k, now, lvl);
         if (!s.listening || !s.driver) return;
-        // Keep the stream continuous, but send silence for quiet sound while the coach talks (speaker echo).
-        const echo = s.sources.size > 0 && lvl < BARGE_IN_LEVEL;
+        // Keep the stream continuous, but send silence for speaker echo (quiet sound while the
+        // coach talks) and for the learner's own clip being replayed.
+        const echo = (coachAudible() && lvl < BARGE_IN_LEVEL) || now < s.clipPlayingUntil;
+        if (echo) s.stats.gated++;
+        else if (lvl >= SPEECH_THRESHOLD) {
+          s.lastSpeechAt = now;
+          s.speechMsSinceModel += (e.data.length / ctx.sampleRate) * 1000;
+        }
         s.driver.sendAudio(echo ? micChunkToLive(new Float32Array(e.data.length), ctx.sampleRate).base64 : base64);
       };
     } catch {
@@ -336,28 +546,25 @@ export function useLiveCoach(opts: {
       return fail("unsupported");
     }
 
-    let data: { mock?: boolean; token?: string; model?: string; apiVersion?: string; error?: string };
+    let data: TokenResponse & { ok: boolean };
     try {
-      const res = await fetch("/api/live", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenarioId: optsRef.current.scenarioId, accent: optsRef.current.accent }),
-      });
-      data = await res.json().catch(() => ({}));
+      data = await fetchToken();
       if (stale()) return;
-      if (!res.ok) return fail("network", data.error || LIVE_MESSAGES.network);
+      if (!data.ok) return fail("network", data.error || LIVE_MESSAGES.network);
     } catch {
       if (stale()) return;
       return fail("network");
     }
 
+    if (!data.mock) stopDiagRef.current = startDiagnostics({ model: data.model, apiVersion: data.apiVersion, resumed: s.started });
     // Gemini speaks the opener first, so its words fill the opener bubble. Demo mode reads the opener
     // out locally, so its first scripted reply needs a bubble of its own.
     s.transcript = makeTranscript(s.started || data.mock ? undefined : optsRef.current.openerId);
     let driver: Driver;
     try {
-      driver = data.mock ? mockDriver() : await liveDriver({ token: data.token!, model: data.model!, apiVersion: data.apiVersion! });
-    } catch {
+      driver = data.mock ? mockDriver() : await liveDriver(data);
+    } catch (e) {
+      s.diag?.("connect-failed", { message: String((e as Error)?.message ?? "").slice(0, 200) });
       if (stale()) return;
       return fail("network");
     }
@@ -368,8 +575,24 @@ export function useLiveCoach(opts: {
     if (stale()) return;
     s.started = true;
     s.listening = true;
+    s.lastModelAt = performance.now();
+    s.speechMsSinceModel = 0;
     s.driver.setListening(true);
     setStatus("listening");
+
+    if (!data.mock) {
+      // Watchdog: the learner clearly spoke (over a second of speech), went quiet, and the coach
+      // produced nothing at all (no voice, words or feedback) for a while: the session is stuck.
+      watchdogRef.current = setInterval(() => {
+        const now = performance.now();
+        if (!s.listening || s.restarting || coachAudible()) return;
+        if (s.speechMsSinceModel > 1000 && s.lastSpeechAt > s.lastModelAt && now - s.lastSpeechAt > STUCK_AFTER_MS) {
+          s.diag?.("stuck", { sinceSpeech: Math.round(now - s.lastSpeechAt), sinceModel: Math.round(now - s.lastModelAt), speechMs: Math.round(s.speechMsSinceModel) });
+          s.speechMsSinceModel = 0;
+          void restart("no reply after speech");
+        }
+      }, 2000);
+    }
   };
 
   const toggle = () => {
@@ -378,6 +601,7 @@ export function useLiveCoach(opts: {
     if (status === "idle") return void start();
     s.listening = status === "paused";
     s.driver?.setListening(s.listening);
+    s.diag?.(s.listening ? "resume-mic" : "pause-mic");
     setStatus(s.listening ? "listening" : "paused");
   };
 
@@ -388,5 +612,5 @@ export function useLiveCoach(opts: {
 
   useEffect(() => () => teardown(), []);
 
-  return { status, error, level, coachSpeaking, toggle, stop };
+  return { status, error, level, coachSpeaking, toggle, stop, playClip };
 }

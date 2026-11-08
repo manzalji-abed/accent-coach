@@ -50,6 +50,9 @@ export function micChunkToLive(samples: Float32Array, sampleRate: number): { bas
   return { base64: bytesToBase64(floatToPcm16Bytes(pcm16k)), pcm16k };
 }
 
+/** Level above which a mic chunk counts as speech (see speechLevel's scale). */
+export const SPEECH_THRESHOLD = 0.12;
+
 /** Root-mean-square level, scaled so normal speech lands roughly between 0.3 and 1. Drives the mic halo. */
 export function speechLevel(samples: Float32Array): number {
   if (!samples.length) return 0;
@@ -63,13 +66,25 @@ export function speechLevel(samples: Float32Array): number {
  * learner's own turn can be cut out afterwards for "Play yours".
  */
 export class ClipBuffer {
-  private chunks: { at: number; samples: Float32Array }[] = [];
+  private chunks: { at: number; samples: Float32Array; level: number }[] = [];
   constructor(private readonly keepMs = 60_000) {}
 
-  push(samples: Float32Array, at: number) {
-    this.chunks.push({ at, samples });
+  push(samples: Float32Array, at: number, level = speechLevel(samples)) {
+    this.chunks.push({ at, samples, level });
     const cutoff = at - this.keepMs;
     while (this.chunks.length && this.chunks[0].at < cutoff) this.chunks.shift();
+  }
+
+  /**
+   * Where the learner actually spoke within a window: from the first loud chunk
+   * to the last, with a little padding. Null if they were quiet the whole time.
+   * Used to cut "Play yours" from real speech instead of guessing from
+   * transcription timing, which tends to arrive late.
+   */
+  speechSpan(fromMs: number, toMs: number, threshold = SPEECH_THRESHOLD, padMs = 300): { start: number; end: number } | null {
+    const loud = this.chunks.filter((c) => c.at >= fromMs && c.at <= toMs && c.level >= threshold);
+    if (!loud.length) return null;
+    return { start: Math.max(fromMs, loud[0].at - padMs), end: Math.min(toMs, loud[loud.length - 1].at + padMs) };
   }
 
   /** Audio captured between two timestamps (ms), joined into one array. */

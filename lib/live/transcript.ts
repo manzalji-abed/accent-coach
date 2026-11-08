@@ -3,12 +3,13 @@
  * calls into chat turns. Pure logic (no audio or network), so it's unit tested.
  */
 import { normalizeReview } from "../ai/schemas";
-import type { Turn, WordFlag } from "../types";
+import type { Correction, Turn, WordFlag } from "../types";
 
 export interface Review {
   transcript: string;
   clarity: number;
   flags: WordFlag[];
+  correction?: Correction;
 }
 
 export interface TranscriptEvents {
