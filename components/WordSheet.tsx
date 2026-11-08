@@ -12,9 +12,11 @@ export function WordSheet(props: {
   clipUrl?: string;
   /** Plays the clip through the live session's audio (loud speaker while the mic is on). Returns false if it can't. */
   playClip?: (url: string) => Promise<boolean>;
+  /** A native sample in Gemini's voice; false means fall back to the device voice. */
+  playNative?: (text: string) => Promise<boolean>;
   onClose: () => void;
 }) {
-  const { flag, accent, clipUrl, playClip, onClose } = props;
+  const { flag, accent, clipUrl, playClip, playNative, onClose } = props;
   const closeRef = useRef<HTMLButtonElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -70,7 +72,15 @@ export function WordSheet(props: {
           <button type="button" className="btn btn-ghost" onClick={playMine} disabled={!clipUrl}>
             <SpeakerIcon size={20} /> Play yours
           </button>
-          <button type="button" className="btn" onClick={() => speak(flag.word, accent, { rate: 0.8 })}>
+          <button
+            type="button"
+            className="btn"
+            onClick={async () => {
+              // The device voice breaks the live mic on iPhone, so Gemini's voice comes first.
+              if (playNative && (await playNative(flag.word))) return;
+              speak(flag.word, accent, { rate: 0.8 });
+            }}
+          >
             <SpeakerIcon size={20} /> Play native
           </button>
         </div>

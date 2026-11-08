@@ -167,7 +167,13 @@ function TalkScreen() {
             <div key={t.id} className="bubble coach">
               {t.text}
               <div>
-                <button type="button" className="speak-again" onClick={() => speak(t.text, accent)}>
+                <button
+                  type="button"
+                  className="speak-again"
+                  onClick={async () => {
+                    if (!(await live.playNative(t.text))) speak(t.text, accent);
+                  }}
+                >
                   <SpeakerIcon size={14} /> Hear it
                 </button>
               </div>
@@ -222,10 +228,11 @@ function TalkScreen() {
           accent={accent}
           clipUrl={open.clip}
           playClip={(url) => live.playClip(url, open.text ? { text: open.text, word: open.flag.word } : undefined)}
+          playNative={live.playNative}
           onClose={() => setOpen(null)}
         />
       )}
-      {fix && <CorrectionSheet said={fix.said} correction={fix.correction} accent={accent} onClose={() => setFix(null)} />}
+      {fix && <CorrectionSheet said={fix.said} correction={fix.correction} accent={accent} playNative={live.playNative} onClose={() => setFix(null)} />}
     </div>
   );
 }
