@@ -18,6 +18,7 @@ export async function gatherContext(gh, event, payload, env = process.env) {
     openAgentPr: null,
     run: null, // workflow_run events: the run, with the PR's branch/commit filled in for Agent Review
     prComments: [],
+    prFiles: [], // files the PR changes; only fetched when auto-merge is on and the review passed
     actorCanWrite: false,
   };
 
@@ -61,6 +62,8 @@ export async function gatherContext(gh, event, payload, env = process.env) {
         ctx.pr = pr;
         ctx.prComments = await gh.listComments(pr.number);
         ctx.linkedIssue = issueFromBranch(pr.headRef);
+        // Only needed to decide on auto-merge, which code (not the reviewer) limits by path.
+        if (run.name === REVIEW_WORKFLOW && run.conclusion === "success" && ctx.config.autoMerge) ctx.prFiles = await gh.listPrFiles(pr.number);
       }
     }
   }

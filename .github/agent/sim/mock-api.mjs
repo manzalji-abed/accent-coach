@@ -50,6 +50,10 @@ export function startMockApi(fake = new FakeGitHub()) {
       if (req.method === "GET" && (m = p.match(/^\/commits\/([^/]+)\/statuses$/))) {
         return send(200, fake.statuses.filter((s) => s.sha === m[1]).reverse().map((s) => ({ context: s.context, state: s.state, target_url: s.url })));
       }
+      if (req.method === "GET" && (m = p.match(/^\/pulls\/(\d+)\/files$/))) {
+        const page = +(url.searchParams.get("page") ?? 1);
+        return send(200, page === 1 ? (await fake.listPrFiles(+m[1])).map((filename) => ({ filename })) : []);
+      }
       if (req.method === "PUT" && (m = p.match(/^\/pulls\/(\d+)\/merge$/))) {
         try {
           await fake.mergePull(+m[1], data.sha);

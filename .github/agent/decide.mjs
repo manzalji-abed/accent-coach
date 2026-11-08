@@ -1,4 +1,4 @@
-import { CI_WORKFLOW, LABELS, MARK, REVIEW_WORKFLOW, issueFromBranch, readReviewMeta } from "./config.mjs";
+import { CI_WORKFLOW, LABELS, MARK, REVIEW_WORKFLOW, issueFromBranch, readReviewMeta, sensitiveFiles } from "./config.mjs";
 
 /**
  * The whole pipeline's decision logic as one pure function.
@@ -110,6 +110,12 @@ export function decide(ctx) {
       if (run.name === REVIEW_WORKFLOW) {
         const ready = { action: "ready", reason: "tests and review passed", issue: issueNumber, pr: ctx.pr.number, headSha: run.head_sha, autoMerge: false };
         if (!isAgentBranch || !ctx.config.autoMerge) return ready;
+        // Enforced in code, not left to the reviewer: sensitive files always need a human.
+        const sensitive = sensitiveFiles(ctx.prFiles);
+        if (sensitive.length) {
+          const shown = sensitive.slice(0, 3).map((f) => `\`${f}\``).join(", ");
+          return { ...ready, manualReason: `it changes sensitive files (${shown}${sensitive.length > 3 ? ", …" : ""})` };
+        }
         // Auto-merge only what the reviewer rated high confidence, for this exact commit.
         const meta = readReviewMeta(ctx.prComments);
         if (meta?.eligible === true && meta.sha === run.head_sha) return { ...ready, reason: "tests and review passed, high confidence", autoMerge: true };

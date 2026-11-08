@@ -110,6 +110,17 @@ export class GitHub {
     return null;
   }
 
+  /** Paths of every file the PR changes (GitHub caps this list at 3000). */
+  async listPrFiles(prNumber) {
+    const out = [];
+    for (let page = 1; page <= 30; page++) {
+      const batch = await this.req("GET", `/repos/${this.repo}/pulls/${prNumber}/files?per_page=100&page=${page}`);
+      out.push(...batch.map((f) => f.filename));
+      if (batch.length < 100) break;
+    }
+    return out;
+  }
+
   /** Squash-merges only if the head is still `sha`, so an unreviewed commit can never slip in. */
   mergePull(prNumber, sha) {
     return this.req("PUT", `/repos/${this.repo}/pulls/${prNumber}/merge`, { merge_method: "squash", sha });

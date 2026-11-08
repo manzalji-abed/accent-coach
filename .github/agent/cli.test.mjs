@@ -150,6 +150,17 @@ describe("run.mjs against a mock GitHub API (real HTTP client, real CLI)", () =>
     expect(api.fake.apiMerges).toEqual([]);
   });
 
+  it("auto-merge never merges a PR that touches lib/ai, even rated high (files come from the real API client)", async () => {
+    api = await startMockApi();
+    const i = api.fake.createIssue({ title: "Tweak prompt" });
+    const pr = api.fake.openPr({ headRef: `agent/issue-${i}`, files: ["lib/ai/prompts.ts"] });
+    const sha = api.fake.items.get(pr).headSha;
+    await cli(["after", "review"], { PR_NUMBER: String(pr), HEAD_SHA: sha, RUN_URL: "https://run/review-7", RESULT: JSON.stringify({ verdict: "approve", summary: "OK", confidence: "high", confidence_reason: "x", findings: [] }) });
+    const r = await cli(["decide"], { ...reviewRun("https://run/review-7"), AGENT_AUTO_MERGE: "true" });
+    expect(JSON.parse(r.outputs.decision)).toMatchObject({ action: "ready", autoMerge: false, manualReason: expect.stringMatching(/sensitive files.*lib\/ai\/prompts\.ts/) });
+    expect(api.fake.apiMerges).toEqual([]);
+  });
+
   it("a review run from some other workflow URL matches no PR", async () => {
     await agentPrWithReview({ verdict: "approve", summary: "OK", confidence: "high", confidence_reason: "x", findings: [] });
     const r = await cli(["decide"], { ...reviewRun("https://run/someone-else"), AGENT_AUTO_MERGE: "true" });

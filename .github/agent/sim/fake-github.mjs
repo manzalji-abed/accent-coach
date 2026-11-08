@@ -24,9 +24,9 @@ export class FakeGitHub {
     this.items.set(n, { number: n, title, body, author, state: "open", labels: new Set(labels), isPr: false, comments: [] });
     return n;
   }
-  openPr({ headRef, title = "Agent PR", sameRepo = true }) {
+  openPr({ headRef, title = "Agent PR", sameRepo = true, files = this.defaultPrFiles ?? ["components/Example.tsx"] }) {
     const n = this.next++;
-    this.items.set(n, { number: n, title, body: "", state: "open", labels: new Set(), isPr: true, comments: [], headRef, headSha: `sha-${n}-1`, merged: false, sameRepo, commits: 1 });
+    this.items.set(n, { number: n, title, body: "", state: "open", labels: new Set(), isPr: true, comments: [], headRef, headSha: `sha-${n}-1`, merged: false, sameRepo, commits: 1, files });
     return n;
   }
   pushCommit(pr) {
@@ -110,6 +110,9 @@ export class FakeGitHub {
   }
   async rerunFailedJobs(runId) {
     this.reruns.push(runId);
+  }
+  async listPrFiles(pr) {
+    return [...(this.items.get(pr).files ?? [])];
   }
   /** Like PUT /pulls/:n/merge. Fires no workflow events: merges made with the Actions token don't. */
   async mergePull(pr, sha) {

@@ -34,6 +34,24 @@ export const REVIEW_STATUS_CONTEXT = "agent/security-review";
 export const CI_WORKFLOW = "CI";
 export const REVIEW_WORKFLOW = "Agent Review";
 
+/**
+ * A PR touching any of these always waits for a human, whatever the reviewer
+ * says: server code, AI prompts and guards, stored data, dependencies, build,
+ * deploy and pipeline config, secrets.
+ */
+export const SENSITIVE_PATHS = [
+  /^app\/api\//,
+  /^lib\/ai\//,
+  /^lib\/store\.ts$/,
+  /^package(-lock)?\.json$/,
+  /^\.github\//,
+  /^\.env/,
+  /^wrangler\.jsonc?$/,
+  /^(next|open-next|playwright|vitest)\.config\./,
+  /^tsconfig\.json$/,
+];
+export const sensitiveFiles = (files = []) => files.filter((f) => SENSITIVE_PATHS.some((re) => re.test(f)));
+
 export function readConfig(env = process.env) {
   const max = parseInt(env.AGENT_MAX_FIX_ATTEMPTS ?? "", 10);
   return {

@@ -100,6 +100,20 @@ export const SCENARIOS = [
     },
   },
   {
+    name: "Auto-merge on, rated high but the PR changes an API route or config: waits (sensitive paths enforced in code)",
+    async run() {
+      const sim = new PipelineSim({ env: { AGENT_AUTO_MERGE: "true" }, script: { build: [PR_OK], review: [CONFIDENT] } });
+      sim.gh.defaultPrFiles = ["components/WordSheet.tsx", "app/api/turn/route.ts", "package.json"];
+      const i = sim.newIssue("Add a Slow button");
+      sim.addLabel(i, LABELS.trigger);
+      await sim.settle();
+      const pr = sim.agentPr(i);
+      assert.deepEqual(sim.gh.apiMerges, []);
+      assert.match(lastBot(sim, pr), /Not merged automatically: it changes sensitive files \(`app\/api\/turn\/route\.ts`, `package\.json`\)/);
+      return sim;
+    },
+  },
+  {
     name: "Auto-merge on, rated high but with a medium-severity finding: waits (enforced in code, not left to the model)",
     async run() {
       const finding = { severity: "medium", file: "components/WordSheet.tsx", issue: "No error state when playback fails", fix: "Show a retry message" };
