@@ -171,7 +171,7 @@ Pages on a private repo needs a paid plan. Without it, the report comment links 
 
 ## 10. Optional: deploy the app
 
-The pipeline doesn't need this; it's only for using the app on a phone. Ask the user whether they want it. With [Vercel](https://vercel.com): import the GitHub repo, add the `GEMINI_API_KEY` environment variable (from <https://aistudio.google.com/apikey>), and deploy. The user does this in their browser, or runs `npx vercel` themselves.
+The pipeline doesn't need this; it's only for using the app on a phone. Ask the user whether they want it. The repo is set up for Cloudflare Workers (`wrangler.jsonc`, OpenNext adapter): change the `routes` pattern to the user's domain, have the user connect the repo in the Cloudflare dashboard (Workers Builds: build `npx opennextjs-cloudflare build`, deploy `npx opennextjs-cloudflare deploy`), and have them run `npx wrangler secret put GEMINI_API_KEY` (key from <https://aistudio.google.com/apikey>) in their own terminal. Put Cloudflare Access in front of the domain so strangers can't spend the Gemini quota.
 
 ## 11. Tell the user how to use it
 

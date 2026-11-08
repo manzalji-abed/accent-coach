@@ -28,7 +28,7 @@ npm run dev                    # http://localhost:3000
 Without a key the app runs in **demo mode**: everything works, feedback is sample data, and a banner says so.
 Open it on your phone (same Wi-Fi, `http://<your-computer-ip>:3000`) to try the mic; browsers only allow the mic on `localhost` or HTTPS, so for real phone testing deploy it (below).
 
-**Deploy:** import the repo on [Vercel](https://vercel.com/new), add `GEMINI_API_KEY` as an environment variable, deploy. On your phone, open the site and use *Add to Home Screen*.
+**Deploy:** this repo deploys to Cloudflare Workers through the [OpenNext](https://opennext.js.org/cloudflare) adapter (`wrangler.jsonc`). Connect the repo in Cloudflare (Workers & Pages → Create → Import a repository) and every merge to `main` deploys. Set the key with `npx wrangler secret put GEMINI_API_KEY`. `npm run deploy` deploys by hand, and `npm run preview` runs the Workers build locally. On your phone, open the site and use *Add to Home Screen*.
 
 The default model is `gemini-3.8-flash`. Override it with `GEMINI_MODEL`.
 
