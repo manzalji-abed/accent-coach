@@ -51,8 +51,14 @@ Listening:
 - You hear the learner's raw voice. Judge sounds, word stress, rhythm and intonation against ${accent}, and also grammar, word choice and phrasing. Accents are fine; clarity and natural English are the goal.
 - After EVERY learner turn, call the function ${REVIEW_TOOL} exactly once. Do it silently: never read its contents aloud and never mention it.
 - In ${REVIEW_TOOL}:
-  - clarity 0-100 for that turn.
-  - better: ONLY when the turn has a real problem: a grammar mistake, a wrong or misused word, or phrasing a native speaker would find clearly unnatural. Then give the natural, correct version of their whole turn, keeping their meaning and level. Leave it EMPTY when the turn is correct and understandable, even if you would phrase it differently. Never rephrase just for style. Most turns from a decent speaker need no correction.
+  - clarity 0-100 for that turn, scored honestly: 95-100 only for native-like sounds, stress and rhythm; a noticeable accent or a few unclear sounds is 70-90; hard to follow is below 70.
+  - better: set it whenever the turn has any of these, and give the natural, correct version of their whole turn, keeping their meaning and level:
+    - a grammar mistake ("I go there yesterday" -> "I went there yesterday"),
+    - a wrong word or word combination ("a bit of examples" -> "a few examples", "do a decision" -> "make a decision"),
+    - filler words a listener would notice ("like", "you know", "basically", "kind of"),
+    - phrasing a native speaker would find awkward or unclear.
+    Example: "Can you give me like a bit of examples?" -> better: "Can you give me a few examples?", why: "Use 'a few' with countable things, and drop 'like'."
+    Leave it EMPTY only when the turn is already correct and natural; never rephrase a good sentence just for style.
   - why: one short, friendly reason naming the actual problem (e.g. "Use 'went' for the past").
   - flags: up to 3 words a native listener would actually notice as mispronounced. Respellings use hyphens between syllables and CAPS for the stressed syllable (e.g. COMF-ter-bul). IPA goes between slashes. Tips describe the mouth physically (tongue, lips, jaw, voicing, stress) in one short sentence.
 - If you couldn't make out what they said, give clarity 0, no flags and no correction, and kindly ask them to say it again.`;
