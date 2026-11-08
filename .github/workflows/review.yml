@@ -1,0 +1,85 @@
+name: Agent Review
+
+# Runs after CI passes on a PR, so tokens aren't spent reviewing broken code.
+# Posts one sticky review comment and sets the "agent/security-review" commit
+# status, which branch protection should require before merging.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: review-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      statuses: write
+      id-token: write
+    env:
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Find the PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          n=$(gh pr list -R "$GITHUB_REPOSITORY" --head "$HEAD_BRANCH" --state open --json number --jq '.[0].number')
+          [ -n "$n" ] || { echo "No open PR for $HEAD_BRANCH"; exit 0; }
+          echo "number=$n" >> "$GITHUB_OUTPUT"
+          gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" -f state=pending -f context=agent/security-review -f description="Reviewing" -f target_url="$RUN_URL" >/dev/null
+      # Pipeline scripts from the default branch; the PR's code is only read, never run.
+      - if: steps.pr.outputs.number
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - if: steps.pr.outputs.number
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/agent
+          path: .pipeline
+      - if: steps.pr.outputs.number
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - if: steps.pr.outputs.number
+        id: prompt
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PROMPT_FILE: ${{ runner.temp }}/prompt.md
+        run: node .pipeline/.github/agent/run.mjs prompt review
+      - if: steps.pr.outputs.number
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        continue-on-error: true
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          allowed_bots: claude
+          claude_args: |
+            --max-turns 40
+            --json-schema '${{ steps.prompt.outputs.schema }}'
+            --allowedTools "Read,Glob,Grep,LS,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git log:*),Bash(git diff:*)"
+      - if: always() && steps.pr.outputs.number
+        name: Post the review and set the status
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          RESULT: ${{ steps.claude.outputs.structured_output }}
+        run: node .pipeline/.github/agent/run.mjs after review

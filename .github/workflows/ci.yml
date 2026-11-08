@@ -1,0 +1,145 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Typecheck, unit tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  ui-tests:
+    name: UI tests (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+      - run: npx playwright test
+        env:
+          CI: "1"
+      - name: Keep report and recordings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-results
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # Posts one comment on the PR (and its issue) with pass/fail, GIFs of the
+  # walkthrough and failures, and a link to the full report. It never runs PR
+  # code: it only reads the uploaded results.
+  ui-report:
+    name: UI report comment
+    needs: ui-tests
+    if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # push media to the test-media branch
+      pull-requests: write
+      issues: write
+      pages: read
+    steps:
+      - name: Check out pipeline scripts from the base branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          sparse-checkout: .github/agent
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v5
+        with:
+          name: ui-test-results
+          path: results
+        continue-on-error: true
+      - name: Make GIFs and publish media
+        id: media
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sudo apt-get -qq update >/dev/null && sudo apt-get -qq install -y ffmpeg >/dev/null
+          out="$RUNNER_TEMP/media/pr-$PR"
+          mkdir -p "$out/report"
+          # Walkthrough (@showcase) videos always; other videos only exist for failures.
+          i=0
+          while IFS= read -r -d '' video; do
+            i=$((i+1)); dir=$(basename "$(dirname "$video")")
+            case "$dir" in *showcase*) name="walkthrough-$i" ;; *) name="failed-$i" ;; esac
+            ffmpeg -loglevel error -y -i "$video" -vf "fps=8,scale=300:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer" -loop 0 "$out/$name.gif"
+          done < <(find results/test-results -name 'video.webm' -print0 2>/dev/null | sort -z)
+          j=0
+          while IFS= read -r -d '' shot; do j=$((j+1)); cp "$shot" "$out/screenshot-$j.png"; done \
+            < <(find results/test-results -name 'test-failed-*.png' -print0 2>/dev/null | sort -z)
+          [ -d results/playwright-report ] && cp -r results/playwright-report/. "$out/report/"
+
+          # One orphan branch holds the latest media per PR.
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          work="$RUNNER_TEMP/test-media"
+          if git ls-remote --exit-code --heads "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" test-media >/dev/null 2>&1; then
+            git clone -q --depth 1 --branch test-media "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$work"
+          else
+            git init -q -b test-media "$work"
+            git -C "$work" remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+            echo "Test recordings and reports for pull requests. Managed by CI; safe to delete." > "$work/README.md"
+          fi
+          rm -rf "$work/pr-$PR" && cp -r "$out" "$work/pr-$PR"
+          touch "$work/.nojekyll"
+          git -C "$work" add -A
+          git -C "$work" commit -q -m "UI media for PR #$PR" || echo "nothing new"
+          for attempt in 1 2 3; do git -C "$work" push -q origin test-media && break || { git -C "$work" pull -q --rebase origin test-media || true; sleep 3; }; done
+
+          owner="${REPO%%/*}"; name="${REPO##*/}"
+          if gh api "repos/$REPO/pages" >/dev/null 2>&1; then
+            echo "report_url=https://${owner}.github.io/${name}/pr-$PR/report/" >> "$GITHUB_OUTPUT"
+          else
+            echo "report_url=${{ github.server_url }}/${REPO}/actions/runs/${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "media_dir=$out" >> "$GITHUB_OUTPUT"
+          echo "base_url=https://github.com/$REPO/blob/test-media/pr-$PR" >> "$GITHUB_OUTPUT"
+      - name: Post the report comment
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node .github/agent/ui-report.mjs results/test-results/results.json "${{ steps.media.outputs.media_dir }}" "${{ steps.media.outputs.base_url }}" "${{ steps.media.outputs.report_url }}"

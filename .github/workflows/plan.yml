@@ -1,0 +1,26 @@
+name: Plan
+
+# Turns unchecked items in PLAN.md into queued issues. The agent works through
+# them one at a time; each starts when the previous one's PR merges.
+on:
+  push:
+    branches: [main]
+    paths: [PLAN.md]
+  workflow_dispatch:
+
+permissions:
+  contents: write # only to send repository_dispatch, which starts the first item
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/agent/run.mjs plan

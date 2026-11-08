@@ -1,0 +1,177 @@
+name: Agent
+
+# The pipeline's brain lives in .github/agent/*.mjs (tested by the simulator in
+# .github/agent/sim). This file only wires GitHub events to it and runs Claude.
+on:
+  issues:
+    types: [labeled, unlabeled]
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [closed]
+  workflow_run:
+    workflows: [CI, Agent Review]
+    types: [completed]
+  repository_dispatch:
+    types: [agent-start]
+
+permissions:
+  contents: read
+
+env:
+  AGENT_MAX_FIX_ATTEMPTS: ${{ vars.AGENT_MAX_FIX_ATTEMPTS || '3' }}
+  AGENT_AUTO_MERGE: ${{ vars.AGENT_AUTO_MERGE || 'false' }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+jobs:
+  decide:
+    # Cheap filters first; everything else is decided (and logged) by decide.mjs.
+    if: >-
+      (github.event_name != 'workflow_run' || github.event.workflow_run.event == 'pull_request') &&
+      (github.event_name != 'issue_comment' || github.event.comment.user.type != 'Bot') &&
+      (github.event_name != 'issues' || github.event.label.name == 'agent')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # only to send repository_dispatch (start the next PLAN.md item)
+      issues: write
+      pull-requests: write
+    outputs:
+      action: ${{ steps.decide.outputs.action }}
+      decision: ${{ steps.decide.outputs.decision }}
+      branch: ${{ steps.decide.outputs.branch }}
+    steps:
+      # Always the default branch: pipeline scripts are never taken from a PR.
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/agent
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - id: decide
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HAS_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        run: node .github/agent/run.mjs decide
+
+  build:
+    needs: decide
+    if: needs.decide.outputs.action == 'build'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: agent-issue-${{ fromJSON(needs.decide.outputs.decision).issue }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write # lets the Claude GitHub App act as claude[bot], so its pushes trigger CI
+      actions: read
+    env:
+      BRANCH: ${{ needs.decide.outputs.branch }}
+      DECISION: ${{ needs.decide.outputs.decision }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+      - name: Use the existing agent branch, or start one from main
+        run: |
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+            git fetch -q origin "$BRANCH" && git checkout -q -B "$BRANCH" "origin/$BRANCH"
+          else
+            git checkout -q -b "$BRANCH"
+          fi
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - id: prompt
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PROMPT_FILE: ${{ runner.temp }}/prompt.md
+        run: node .github/agent/run.mjs prompt build
+      - id: claude
+        uses: anthropics/claude-code-action@v1
+        continue-on-error: true
+        env:
+          MOCK_AI: "1"
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          claude_args: |
+            --max-turns 120
+            --json-schema '${{ steps.prompt.outputs.schema }}'
+            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh issue view:*),Bash(ls:*),Bash(cat:*),Bash(mkdir:*)"
+            --disallowedTools "Bash(git push --force:*),Bash(git push -f:*),Bash(gh secret:*),Bash(curl:*),Bash(wget:*)"
+      - name: Report the result on the issue
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RESULT: ${{ steps.claude.outputs.structured_output }}
+        run: node .github/agent/run.mjs after build
+
+  fix:
+    needs: decide
+    if: needs.decide.outputs.action == 'fix'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: agent-issue-${{ fromJSON(needs.decide.outputs.decision).issue || fromJSON(needs.decide.outputs.decision).pr }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+      actions: write # read failed logs, and re-run checks after a no-change attempt
+    env:
+      DECISION: ${{ needs.decide.outputs.decision }}
+      PR: ${{ fromJSON(needs.decide.outputs.decision).pr }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+      - name: Check out the PR branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh pr view "$PR" --json headRefName --jq .headRefName)
+          case "$head" in agent/issue-*) ;; *) echo "Refusing to push to non-agent branch $head"; exit 1 ;; esac
+          git fetch -q origin "$head" && git checkout -q -B "$head" "origin/$head"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - id: prompt
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PROMPT_FILE: ${{ runner.temp }}/prompt.md
+        run: node .github/agent/run.mjs prompt fix
+      - id: claude
+        uses: anthropics/claude-code-action@v1
+        continue-on-error: true
+        env:
+          MOCK_AI: "1"
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          allowed_bots: claude
+          claude_args: |
+            --max-turns 80
+            --json-schema '${{ steps.prompt.outputs.schema }}'
+            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git:*),Bash(gh run view:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(ls:*),Bash(cat:*)"
+            --disallowedTools "Bash(git push --force:*),Bash(git push -f:*),Bash(gh secret:*),Bash(curl:*),Bash(wget:*)"
+      - name: Report the result on the PR
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RESULT: ${{ steps.claude.outputs.structured_output }}
+        run: node .github/agent/run.mjs after fix
