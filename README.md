@@ -36,6 +36,8 @@ The default model is `gemini-3.8-flash`. Override it with `GEMINI_MODEL`.
 
 ## Set up the agent pipeline (about 10 minutes)
 
+> **Using Claude Code?** Unzip, open the folder in Claude Code, and say *"set this repo up on GitHub"*. It follows [SETUP.md](SETUP.md) and stops when it needs you (installing the GitHub App, adding your token). The steps below are the same thing, by hand.
+
 1. **Push this repo to GitHub** (private is fine).
 2. **Install the Claude GitHub App** on the repo: <https://github.com/apps/claude>.
    This matters: commits the agent pushes as `claude[bot]` trigger CI. (Pushes made with the default Actions token don't.)
@@ -121,5 +123,6 @@ tests/unit, tests/e2e
 .github/workflows    ci.yml · agent.yml · review.yml · plan.yml
 .github/agent        pipeline logic, prompts, simulator, tests
 CLAUDE.md            instructions the agents follow
+SETUP.md             setup runbook Claude Code follows (GitHub repo, secrets, protection, smoke test)
 PLAN.md              optional queue of work
 ```

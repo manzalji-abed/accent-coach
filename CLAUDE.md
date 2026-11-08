@@ -1,5 +1,8 @@
 # Accent Coach: notes for coding agents
 
+> **Asked to set up this repo on GitHub (create the repo, secrets, protection, the agent pipeline)?**
+> Follow [SETUP.md](SETUP.md) step by step. Everything below is about working on the app's code.
+
 A mobile-first web app where learners talk to an AI pronunciation coach. Gemini
 listens to their raw audio and returns structured feedback; the UI underlines
 mispronounced words and explains how to fix them.
