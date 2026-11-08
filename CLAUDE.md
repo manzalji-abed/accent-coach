@@ -28,14 +28,16 @@ Run `npx playwright test` whenever you touch anything under `app/` or `component
 
 - `app/` Next.js App Router pages; `app/api/*` are the only server code (Gemini calls).
 - `components/` UI pieces. `lib/` logic with no React (easy to unit test).
-- `lib/ai/` prompts, JSON schemas, the Gemini client, input guards, and the **mock** coach.
+- `lib/ai/` prompts, JSON schemas, the Gemini client, input guards, and the **mock** coach. `lib/ai/live.ts` builds the live coach config and mints single-use Live tokens.
+- `lib/live/` the live voice conversation on Talk: `useLiveCoach` (mic -> Gemini Live -> speaker, plus a scripted demo driver), `transcript.ts` (voice stream -> chat turns), `pcm.ts` (audio conversion). Pure logic lives outside the hook so it's unit tested.
 - `lib/store.ts` all user data lives in localStorage on the device (no accounts yet).
 - `tests/unit` Vitest. `tests/e2e` Playwright. `.github/agent` the issue-to-merge pipeline (don't edit).
 
 ## Rules
 
 - **Demo mode:** with no `GEMINI_API_KEY` (or `MOCK_AI=1`) the API routes return deterministic sample data from `lib/ai/mock.ts`. UI tests depend on it. If you change response shapes, update the mock too.
-- **Model output is untrusted.** Every Gemini response goes through a normalizer in `lib/ai/schemas.ts`. Keep it that way.
+- **Model output is untrusted.** Every Gemini response goes through a normalizer in `lib/ai/schemas.ts`. Keep it that way. That includes the live coach's `review_turn` calls, which arrive in the browser (`normalizeReview`).
+- **Live voice:** the browser talks to Gemini Live directly with a single-use token from `/api/live`; the system prompt, tools and voice are locked into that token server-side. Never send the real API key or let the client choose the prompt.
 - **API routes:** validate every input, cap sizes (`lib/ai/guard.ts`), rate-limit, never echo the API key, never put user free text into prompts beyond the transcript history.
 - **Tests:** new logic gets a unit test; any visible change gets a Playwright test. Use `data-testid` for things tests need to find. Never weaken or delete a test to make it pass.
 - **Design:** use the CSS tokens in `app/globals.css` (`--voice` for primary actions and the learner, `--slip` for mispronounced, `--clear` for good). Mobile first; check 390px wide. Respect `prefers-reduced-motion`. Keep the mic button the one bold element on talk screens.

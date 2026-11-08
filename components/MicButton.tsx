@@ -2,14 +2,17 @@
 import type { RecorderState } from "@/lib/useRecorder";
 import { MicIcon, StopIcon } from "./icons";
 
-const LABEL: Record<RecorderState, string> = {
+export type MicState = RecorderState | "paused";
+
+const LABEL: Record<MicState, string> = {
   idle: "Start speaking",
   requesting: "Waiting for microphone",
   recording: "Stop and send",
   processing: "Sending",
+  paused: "Resume speaking",
 };
 
-export function MicButton(props: { state: RecorderState; level: number; disabled?: boolean; onClick: () => void }) {
+export function MicButton(props: { state: MicState; level: number; disabled?: boolean; label?: string; onClick: () => void }) {
   const busy = props.state === "processing" || props.state === "requesting";
   return (
     <button
@@ -19,7 +22,7 @@ export function MicButton(props: { state: RecorderState; level: number; disabled
       style={{ "--level": props.level } as React.CSSProperties}
       onClick={props.onClick}
       disabled={props.disabled || busy}
-      aria-label={LABEL[props.state]}
+      aria-label={props.label ?? LABEL[props.state]}
       aria-pressed={props.state === "recording"}
       data-testid="mic"
     >

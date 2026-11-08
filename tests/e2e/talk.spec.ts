@@ -1,25 +1,44 @@
 import { expect, test } from "@playwright/test";
 import { onboard, speakTurn } from "./helpers";
 
-test("coach failure shows a clear error and Send again recovers", async ({ page }) => {
+test("live session failure shows a clear error and tapping the mic again reconnects", async ({ page }) => {
   await onboard(page);
-  await page.route("**/api/turn", (route) => route.fulfill({ status: 502, json: { error: "Couldn't reach the coach. Check your connection and try again." } }));
+  await page.route("**/api/live", (route) => route.fulfill({ status: 502, json: { error: "Couldn't start a live session with your coach. Try again in a minute." } }));
   await page.getByRole("link", { name: /Free talk/ }).click();
-  await speakTurn(page);
-  await expect(page.getByTestId("dock-hint")).toHaveText(/Couldn.t reach the coach/);
+  await page.getByTestId("mic").click();
+  await expect(page.getByTestId("dock-hint")).toHaveText(/Couldn.t start a live session/);
+  await expect(page.getByTestId("mic")).toHaveAttribute("data-state", "idle");
   await expect(page.getByTestId("user-bubble")).toHaveCount(0);
 
-  await page.unroute("**/api/turn");
-  await page.getByRole("button", { name: "Send again" }).click();
+  await page.unroute("**/api/live");
+  await speakTurn(page);
   await expect(page.getByTestId("user-bubble")).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "Send again" })).toBeHidden();
+  await expect(page.getByTestId("dock-hint")).not.toHaveText(/Couldn.t/);
 });
 
-test("a too-quick tap explains how to record", async ({ page }) => {
+test("live conversation: pausing stops listening, tapping again carries on", async ({ page }) => {
   await onboard(page);
   await page.getByRole("link", { name: /Free talk/ }).click();
-  await speakTurn(page, 100);
-  await expect(page.getByTestId("dock-hint")).toHaveText(/too quick/);
+  const mic = page.getByTestId("mic");
+  await expect(page.getByTestId("dock-hint")).toHaveText("Tap the mic to start talking with your coach");
+
+  await mic.click();
+  await expect(mic).toHaveAttribute("data-state", "recording");
+  await expect(page.getByTestId("live-status")).toHaveText("Live");
+  await expect(page.getByTestId("user-bubble")).toHaveCount(1);
+  // The coach answers in the same conversation, without a send step.
+  await expect(page.locator(".bubble.coach")).toHaveCount(2);
+
+  await mic.click();
+  await expect(mic).toHaveAttribute("data-state", "paused");
+  await expect(page.getByTestId("live-status")).toHaveText("Paused");
+  await expect(page.getByTestId("dock-hint")).toHaveText("Paused. Tap the mic to keep talking.");
+  await page.waitForTimeout(4000); // longer than demo mode's gap between turns
+  await expect(page.getByTestId("user-bubble")).toHaveCount(1); // nothing heard while paused
+
+  await mic.click();
+  await expect(mic).toHaveAttribute("data-state", "recording");
+  await expect(page.getByTestId("user-bubble")).toHaveCount(2);
 });
 
 test("blocked microphone tells the user how to fix it", async ({ page }) => {
