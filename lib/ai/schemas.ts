@@ -71,7 +71,7 @@ export const reviewToolParams = {
     flags: { type: "ARRAY", items: liveFlagParams, description: "Up to 3 words a listener would notice as mispronounced, most important first. Empty if none." },
     better: {
       type: "STRING",
-      description: "Only if the turn has a real mistake (grammar, wrong word) or clearly unnatural phrasing: the correct, natural way to say the whole turn, keeping their meaning. Empty if the turn was correct and understandable. Never just a style preference.",
+      description: "If the turn has a grammar mistake, a wrong word or word combination, noticeable filler words (like, you know) or awkward phrasing: the correct, natural way to say the whole turn, keeping their meaning. Empty only if it was already correct and natural.",
     },
     why: { type: "STRING", description: "If 'better' is set: one short, friendly reason, under 15 words, e.g. \"Use 'went' for the past.\"" },
   },
