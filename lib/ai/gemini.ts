@@ -64,6 +64,7 @@ export async function generateJson(opts: {
   // Cloudflare was seen aborting within a second, far short of the timeout.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+  const t0 = Date.now();
   try {
     // Streaming makes Gemini answer with headers right away, so a slow reply can't
     // trip Cloudflare's "no response within 100 s" limit (error 524).
@@ -81,8 +82,9 @@ export async function generateJson(opts: {
       },
     });
     raw = await collectStreamText(stream);
+    console.log("gemini-timing", JSON.stringify({ ms: Date.now() - t0, chars: raw.length }));
   } catch (err) {
-    console.error("Gemini request failed", (err as { status?: number }).status, (err as Error).message, controller.signal.aborted ? "(our timeout)" : "");
+    console.error("Gemini request failed", (err as { status?: number }).status, (err as Error).message, controller.signal.aborted ? "(our timeout)" : "", `after ${Date.now() - t0} ms`);
     throw aiErrorFrom(err);
   } finally {
     clearTimeout(timer);

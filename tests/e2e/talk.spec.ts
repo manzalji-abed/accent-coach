@@ -66,3 +66,27 @@ test("role-play opens in character", async ({ page }) => {
   await expect(page.locator(".talk-head h1")).toHaveText(/Customs officer|Hotel check-in|Ordering dinner/);
   await expect(page.locator(".bubble.coach").first()).not.toBeEmpty();
 });
+
+test("native samples ask for Gemini's voice first, fall back cleanly, and the conversation carries on", async ({ page }) => {
+  await onboard(page);
+  await page.getByRole("link", { name: /Free talk/ }).click();
+  await speakTurn(page);
+  const bubble = page.getByTestId("user-bubble").first();
+
+  await bubble.getByRole("button", { name: /think: see how to say it/ }).click();
+  const sheet = page.getByTestId("word-sheet");
+  const native = page.waitForRequest((r) => r.url().endsWith("/api/tts") && r.method() === "POST");
+  await sheet.getByRole("button", { name: "Play native" }).click();
+  expect(JSON.parse((await native).postData() ?? "{}")).toMatchObject({ text: "think" });
+  await sheet.getByRole("button", { name: "Done" }).click();
+
+  await bubble.getByTestId("correction-chip").click();
+  const fix = page.getByTestId("correction-sheet");
+  const hear = page.waitForRequest((r) => r.url().endsWith("/api/tts"));
+  await fix.getByRole("button", { name: "Hear it" }).click();
+  expect(JSON.parse((await hear).postData() ?? "{}")).toMatchObject({ text: "I feel comfortable talking about my work." });
+  await fix.getByRole("button", { name: "Done" }).click();
+
+  await speakTurn(page);
+  await expect(page.getByTestId("user-bubble")).toHaveCount(2);
+});

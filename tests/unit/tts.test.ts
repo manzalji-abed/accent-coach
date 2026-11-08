@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { GET as diag } from "@/app/api/diag/gemini/route";
 import { POST } from "@/app/api/tts/route";
-import { MAX_TTS_CHARS } from "@/lib/ai/tts";
+import { ensureWav, MAX_TTS_CHARS } from "@/lib/ai/tts";
 
 const ip = () => `203.0.113.${Math.floor(Math.random() * 250)}`;
 const tts = (body: unknown) =>
@@ -28,11 +27,20 @@ describe("/api/tts native samples", () => {
   });
 });
 
-describe("/api/diag/gemini (temporary)", () => {
-  it("does nothing in demo mode and is limited to 2 calls a minute", async () => {
-    const req = () => new Request("https://x/api/diag/gemini", { headers: { "cf-connecting-ip": "198.51.100.88" } });
-    expect(await (await diag(req())).json()).toMatchObject({ mock: true });
-    await diag(req());
-    expect((await diag(req())).status).toBe(429);
+
+describe("ensureWav", () => {
+  it("wraps raw 16-bit PCM in a WAV header at the stated rate", () => {
+    const wav = ensureWav(new Uint8Array(480), "audio/L16;rate=16000");
+    const ascii = (a: number, b: number) => String.fromCharCode(...wav.subarray(a, b));
+    expect(ascii(0, 4)).toBe("RIFF");
+    expect(ascii(8, 12)).toBe("WAVE");
+    expect(new DataView(wav.buffer).getUint32(24, true)).toBe(16000);
+    expect(wav.length).toBe(44 + 480);
+  });
+
+  it("leaves real WAV untouched and defaults raw PCM to 24 kHz", () => {
+    const wav = ensureWav(new Uint8Array(100));
+    expect(new DataView(wav.buffer).getUint32(24, true)).toBe(24000);
+    expect(ensureWav(wav)).toBe(wav);
   });
 });

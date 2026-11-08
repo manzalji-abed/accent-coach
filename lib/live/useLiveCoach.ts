@@ -198,7 +198,9 @@ export function useLiveCoach(opts: {
     const s = r.current;
     const ctx = s.ctx;
     if (!ctx || ctx.state === "closed") {
-      const audio = new Audio(URL.createObjectURL(new Blob([bytes], { type: "audio/wav" })));
+      const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+      const audio = new Audio(url);
+      audio.onended = audio.onerror = () => URL.revokeObjectURL(url);
       await audio.play();
       return true;
     }
