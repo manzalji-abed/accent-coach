@@ -5,8 +5,15 @@ import type { Accent, Correction } from "@/lib/types";
 import { SpeakerIcon } from "./icons";
 
 /** "Better way to say it": the learner's sentence next to a more natural version, as a bottom sheet. */
-export function CorrectionSheet(props: { said: string; correction: Correction; accent: Accent; onClose: () => void }) {
-  const { said, correction, accent, onClose } = props;
+export function CorrectionSheet(props: {
+  said: string;
+  correction: Correction;
+  accent: Accent;
+  /** A native sample in Gemini's voice; false means fall back to the device voice. */
+  playNative?: (text: string) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const { said, correction, accent, playNative, onClose } = props;
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -45,7 +52,11 @@ export function CorrectionSheet(props: { said: string; correction: Correction; a
           </div>
         )}
 
-        <button type="button" className="btn" style={{ width: "100%" }} onClick={() => speak(correction.better, accent, { rate: 0.9 })}>
+        <button type="button" className="btn" style={{ width: "100%" }} onClick={async () => {
+            if (playNative && (await playNative(correction.better))) return;
+            speak(correction.better, accent, { rate: 0.9 });
+          }}
+        >
           <SpeakerIcon size={20} /> Hear it
         </button>
       </div>

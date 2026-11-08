@@ -182,26 +182,61 @@ export function useLiveCoach(opts: {
    * With a word, plays just that word's estimated stretch of the sentence.
    */
   const playClip = useCallback(async (url: string, focus?: { text: string; word: string }): Promise<boolean> => {
+    try {
+      return await playBytes(await (await fetch(url)).arrayBuffer(), focus);
+    } catch {
+      return false;
+    }
+  }, []);
+
+  /**
+   * Plays audio bytes (WAV) through the live audio engine, keeping the mic muted
+   * meanwhile so the coach doesn't hear it. Outside a session it uses a plain
+   * <audio> element (no mic is open then, so the speaker is used anyway).
+   */
+  const playBytes = async (bytes: ArrayBuffer, focus?: { text: string; word: string }): Promise<boolean> => {
     const s = r.current;
     const ctx = s.ctx;
-    if (!ctx || ctx.state === "closed") return false;
-    try {
-      const buffer = await ctx.decodeAudioData(await (await fetch(url)).arrayBuffer());
-      try {
-        s.clipSource?.stop();
-      } catch {
-        /* already stopped */
-      }
-      const span = focus ? estimateWordSpan(buffer.getChannelData(0), buffer.sampleRate, focus.text, focus.word) : null;
-      const offset = span?.start ?? 0;
-      const duration = span ? span.end - span.start : buffer.duration;
-      const src = ctx.createBufferSource();
-      src.buffer = buffer;
-      src.connect(ctx.destination);
-      src.start(0, offset, duration);
-      s.clipSource = src;
-      s.clipPlayingUntil = performance.now() + duration * 1000 + 200;
+    if (!ctx || ctx.state === "closed") {
+      const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+      const audio = new Audio(url);
+      audio.onended = audio.onerror = () => URL.revokeObjectURL(url);
+      await audio.play();
       return true;
+    }
+    const buffer = await ctx.decodeAudioData(bytes.slice(0)); // decodeAudioData takes ownership; keep the cached copy intact
+    try {
+      s.clipSource?.stop();
+    } catch {
+      /* already stopped */
+    }
+    const span = focus ? estimateWordSpan(buffer.getChannelData(0), buffer.sampleRate, focus.text, focus.word) : null;
+    const offset = span?.start ?? 0;
+    const duration = span ? span.end - span.start : buffer.duration;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(ctx.destination);
+    src.start(0, offset, duration);
+    s.clipSource = src;
+    s.clipPlayingUntil = performance.now() + duration * 1000 + 200;
+    return true;
+  };
+
+  /**
+   * A native-speaker sample in Gemini's voice (/api/tts), cached per text.
+   * Returns false in demo mode or on failure, so callers can fall back to the device voice.
+   */
+  const nativeCache = useRef(new Map<string, ArrayBuffer>());
+  const playNative = useCallback(async (text: string): Promise<boolean> => {
+    try {
+      let bytes = nativeCache.current.get(text);
+      if (!bytes) {
+        const res = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+        if (!res.ok || !(res.headers.get("content-type") ?? "").startsWith("audio/")) return false;
+        bytes = await res.arrayBuffer();
+        nativeCache.current.set(text, bytes);
+      }
+      return await playBytes(bytes);
     } catch {
       return false;
     }
@@ -710,5 +745,5 @@ export function useLiveCoach(opts: {
 
   useEffect(() => () => teardown(), []);
 
-  return { status, error, level, coachSpeaking, toggle, stop, playClip };
+  return { status, error, level, coachSpeaking, toggle, stop, playClip, playNative };
 }
