@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { encodeWav } from "../audio";
 import { mockTurn } from "../ai/mock";
 import { REVIEW_TOOL } from "../ai/prompts";
-import { speak, stopSpeaking } from "../speech";
+import { builtInVoiceActive, speak, stopSpeaking } from "../speech";
 import type { Accent, Turn } from "../types";
 import { base64ToBytes, ClipBuffer, estimateWordSpan, LIVE_INPUT_MIME, LIVE_INPUT_RATE, LIVE_OUTPUT_RATE, micChunkToLive, pcm16BytesToFloat, SPEECH_THRESHOLD, speechLevel } from "./pcm";
 import { LiveTranscript, type TranscriptEvents } from "./transcript";
@@ -37,8 +37,6 @@ const MIC_CONSTRAINTS: MediaStreamConstraints = { audio: { echoCancellation: tru
 /** No mic audio for this long while the audio engine runs means the phone stopped the mic: reconnect it. */
 const MIC_STALL_MS = 1500;
 const MAX_MIC_RESTARTS_PER_MIN = 3;
-/** The device's built-in voice (Play native, Hear it) is playing: keep it out of the mic. */
-const builtInVoiceSpeaking = () => typeof window !== "undefined" && Boolean(window.speechSynthesis?.speaking);
 
 /** Fixed text (never learner input) sent when the coach ends a turn without answering. */
 const NUDGE_TEXT = "(Answer the learner out loud now and keep the conversation going.)";
@@ -629,7 +627,7 @@ export function useLiveCoach(opts: {
         if (!s.listening || !s.driver) return;
         // Keep the stream continuous, but send silence for speaker echo (quiet sound while the
         // coach talks) and for the learner's own clip being replayed.
-        const echo = (coachAudible() && lvl < BARGE_IN_LEVEL) || now < s.clipPlayingUntil || builtInVoiceSpeaking();
+        const echo = (coachAudible() && lvl < BARGE_IN_LEVEL) || now < s.clipPlayingUntil || builtInVoiceActive();
         if (echo) s.stats.gated++;
         else if (lvl >= SPEECH_THRESHOLD) {
           s.lastSpeechAt = now;
@@ -682,7 +680,7 @@ export function useLiveCoach(opts: {
       watchdogRef.current = setInterval(() => {
         const now = performance.now();
         // iOS can stop the mic (track muted or no frames) after its own voice plays, while the audio engine keeps running.
-        if (s.ctx?.state === "running" && !s.micRestarting && now - s.lastChunkAt > MIC_STALL_MS && !builtInVoiceSpeaking()) {
+        if (s.ctx?.state === "running" && !s.micRestarting && now - s.lastChunkAt > MIC_STALL_MS && !builtInVoiceActive()) {
           void restartMic("stalled");
         }
         if (!s.listening || s.restarting || coachAudible()) return;
