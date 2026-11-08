@@ -1,14 +1,17 @@
 "use client";
 import Link from "next/link";
 import { phonemeLabel, sessionClarity } from "@/lib/progress";
-import type { Session, WordFlag } from "@/lib/types";
+import { speak } from "@/lib/speech";
+import type { Accent, Session, WordFlag } from "@/lib/types";
+import { SpeakerIcon } from "./icons";
 
-export function SessionSummary(props: { session: Session; loading: boolean; onPick: (f: WordFlag) => void; againHref: string }) {
+export function SessionSummary(props: { session: Session; loading: boolean; onPick: (f: WordFlag) => void; againHref: string; accent: Accent }) {
   const { session, loading } = props;
   const score = sessionClarity(session);
   const flags = session.turns.flatMap((t) => t.flags ?? []);
   const unique = flags.filter((f, i) => flags.findIndex((g) => g.word.toLowerCase() === f.word.toLowerCase()) === i);
   const minutes = Math.max(1, Math.round(session.speakingSeconds / 60));
+  const corrections = session.turns.filter((t) => t.role === "user" && t.correction).slice(-5);
 
   return (
     <main className="page summary" data-testid="summary">
@@ -45,6 +48,26 @@ export function SessionSummary(props: { session: Session; loading: boolean; onPi
           </>
         )}
       </div>
+
+      {corrections.length > 0 && (
+        <div style={{ textAlign: "left" }} data-testid="summary-corrections">
+          <h2 className="section-title">Better ways to say it</h2>
+          <ul className="corrections">
+            {corrections.map((t) => (
+              <li key={t.id} className="correction">
+                <p className="correction-said">You said: {t.text}</p>
+                <p>
+                  <span className="correction-label">Better:</span> {t.correction!.better}
+                </p>
+                {t.correction!.why && <p className="correction-why">{t.correction!.why}</p>}
+                <button type="button" className="speak-again" onClick={() => speak(t.correction!.better, props.accent)}>
+                  <SpeakerIcon size={14} /> Hear it
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {unique.length > 0 && (
         <div style={{ textAlign: "left" }}>

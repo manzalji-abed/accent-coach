@@ -57,7 +57,16 @@ function TalkScreen() {
       userText: (id, text) => setSession((s) => ({ ...s, turns: upsertTurn(s.turns, id, { role: "user", text }) })),
       coachText: (id, text) => setSession((s) => ({ ...s, turns: upsertTurn(s.turns, id, { role: "coach", text }) })),
       review: (id, r) =>
-        setSession((s) => ({ ...s, turns: upsertTurn(s.turns, id, { role: "user", clarity: r.clarity, flags: r.flags, ...(r.transcript ? { text: r.transcript } : {}) }) })),
+        setSession((s) => ({
+          ...s,
+          turns: upsertTurn(s.turns, id, {
+            role: "user",
+            clarity: r.clarity,
+            flags: r.flags,
+            ...(r.transcript ? { text: r.transcript } : {}),
+            ...(r.correction ? { correction: r.correction } : {}),
+          }),
+        })),
       userDone: () => {},
       userClip: (id, url, seconds) => {
         setClips((c) => ({ ...c, [id]: url }));
@@ -107,7 +116,7 @@ function TalkScreen() {
   if (finished && userTurnCount > 0) {
     return (
       <>
-        <SessionSummary session={session} loading={summaryLoading} onPick={(flag) => setOpen({ flag })} againHref={`/talk?scenario=${scenario.id}`} />
+        <SessionSummary session={session} loading={summaryLoading} onPick={(flag) => setOpen({ flag })} againHref={`/talk?scenario=${scenario.id}`} accent={accent} />
         {open && <WordSheet flag={open.flag} accent={accent} onClose={() => setOpen(null)} />}
       </>
     );
@@ -171,6 +180,17 @@ function TalkScreen() {
                   </span>
                 )}
               </div>
+              {t.correction && (
+                <div className="correction" data-testid="correction">
+                  <p>
+                    <span className="correction-label">Better:</span> {t.correction.better}
+                  </p>
+                  {t.correction.why && <p className="correction-why">{t.correction.why}</p>}
+                  <button type="button" className="speak-again" onClick={() => speak(t.correction!.better, accent)}>
+                    <SpeakerIcon size={14} /> Hear it
+                  </button>
+                </div>
+              )}
             </div>
           ),
         )}
@@ -200,7 +220,7 @@ function TalkScreen() {
         </div>
       </div>
 
-      {open && <WordSheet flag={open.flag} accent={accent} clipUrl={open.clip} onClose={() => setOpen(null)} />}
+      {open && <WordSheet flag={open.flag} accent={accent} clipUrl={open.clip} playClip={live.playClip} onClose={() => setOpen(null)} />}
     </div>
   );
 }

@@ -477,6 +477,40 @@ a {
   padding: 4px 0 0;
   text-decoration: underline;
 }
+/* "Better: ..." whole-sentence fix, in the "clear" (good) colour. */
+.correction {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--card);
+  border-left: 3px solid var(--clear);
+  font-size: 0.92rem;
+  text-align: left;
+}
+.correction p {
+  margin: 0;
+}
+.correction-label {
+  color: var(--clear);
+  font-weight: 700;
+}
+.correction-why,
+.correction-said {
+  margin-top: 4px !important;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.corrections {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 20px;
+  display: grid;
+  gap: 10px;
+}
+.corrections .correction {
+  margin-top: 0;
+  box-shadow: var(--shadow);
+}
 
 .dock {
   position: relative;

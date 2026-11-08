@@ -14,6 +14,7 @@ import {
 } from "@/lib/live/pcm";
 import { LATE_TEXT_MS, LiveTranscript, SPEECH_LEAD_MS, upsertTurn, type Review } from "@/lib/live/transcript";
 import { rateLimited } from "@/lib/ai/guard";
+import { normalizeReview } from "@/lib/ai/schemas";
 
 describe("live audio: PCM conversion", () => {
   it("encodes Float32 as 16-bit little-endian PCM and decodes it back", () => {
@@ -216,5 +217,53 @@ describe("rate limiting identity", () => {
     const spoofB = new Request("https://x/api", { headers: { "cf-connecting-ip": "198.51.100.9", "x-forwarded-for": "2.2.2.2" } });
     for (let i = 0; i < 2; i++) rateLimited(spoofA, 2, 60_000, "ident");
     expect(rateLimited(spoofB, 2, 60_000, "ident")).toBe(true); // changing x-forwarded-for doesn't reset the limit
+  });
+});
+
+
+describe("sentence corrections from the live coach", () => {
+  it("keeps a real rewording with its reason", () => {
+    const r = normalizeReview({ clarity: 80, flags: [], better: "  I went to the store yesterday. ", why: "Use 'went' for the past." }, "I go to the store yesterday");
+    expect(r.correction).toEqual({ better: "I went to the store yesterday.", why: "Use 'went' for the past." });
+  });
+
+  it("drops a 'correction' that just repeats what was said (ignoring case and punctuation)", () => {
+    const r = normalizeReview({ clarity: 90, flags: [], better: "i feel GREAT today!", why: "x" }, "I feel great today.");
+    expect(r.correction).toBeUndefined();
+  });
+
+  it("drops empty or missing corrections and caps lengths", () => {
+    expect(normalizeReview({ clarity: 90, flags: [], better: "", why: "" }, "Hello").correction).toBeUndefined();
+    expect(normalizeReview({ clarity: 90, flags: [] }, "Hello").correction).toBeUndefined();
+    const long = normalizeReview({ clarity: 90, flags: [], better: "x".repeat(1000), why: "y".repeat(1000) }, "Hello");
+    expect(long.correction?.better.length).toBe(300);
+    expect(long.correction?.why.length).toBe(200);
+  });
+
+  it("flows through the live transcript to the learner's turn", () => {
+    const seen: Review[] = [];
+    const t = new LiveTranscript({ userText() {}, userDone() {}, coachText() {}, review: (_id, r) => seen.push(r) }, () => "u1");
+    t.heardUser("I go there yesterday", 0);
+    t.reviewed({ clarity: 70, flags: [], better: "I went there yesterday.", why: "Past tense." });
+    expect(seen[0].correction?.better).toBe("I went there yesterday.");
+  });
+});
+
+describe("live audio: finding the learner's actual speech for 'Play yours'", () => {
+  it("cuts from the first to the last loud chunk, padded, inside the window", () => {
+    const buf = new ClipBuffer();
+    buf.push(new Float32Array(10), 1000, 0.01); // quiet before speaking
+    buf.push(new Float32Array(10), 2000, 0.5); // speech starts
+    buf.push(new Float32Array(10), 2500, 0.3);
+    buf.push(new Float32Array(10), 3000, 0.02); // quiet gap after
+    expect(buf.speechSpan(0, 4000)).toEqual({ start: 1700, end: 2800 });
+    expect(buf.speechSpan(0, 4000, 0.4, 0)).toEqual({ start: 2000, end: 2000 });
+    expect(buf.speechSpan(1900, 2100, undefined, 500)).toEqual({ start: 1900, end: 2100 }); // padding stays inside the window
+  });
+
+  it("returns null when the learner was quiet the whole window", () => {
+    const buf = new ClipBuffer();
+    buf.push(new Float32Array(10), 1000, 0.01);
+    expect(buf.speechSpan(0, 2000)).toBeNull();
   });
 });

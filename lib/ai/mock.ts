@@ -22,10 +22,22 @@ const THINK: WordFlag = {
   tip: "Put your tongue tip lightly between your teeth and blow air out softly.",
 };
 
-const MOCK_LINES = [
-  { transcript: "I think I feel comfortable talking about my work.", reply: "That's great to hear! What do you enjoy most about it?", clarity: 78, flags: [THINK, COMFORTABLE] },
+const MOCK_LINES: TurnAnalysis[] = [
+  {
+    transcript: "I think I feel comfortable talking about my work.",
+    reply: "That's great to hear! What do you enjoy most about it?",
+    clarity: 78,
+    flags: [THINK, COMFORTABLE],
+    correction: { better: "I feel comfortable talking about my work.", why: "Drop 'I think': say how you feel directly." },
+  },
   { transcript: "I like working with people and solving problems.", reply: "Nice. Can you tell me about a problem you solved recently?", clarity: 91, flags: [] },
-  { transcript: "Last week I think we fixed a big bug in the system.", reply: "Impressive! How did your team find it?", clarity: 84, flags: [THINK] },
+  {
+    transcript: "Last week I think we fixed a big bug in the system.",
+    reply: "Impressive! How did your team find it?",
+    clarity: 84,
+    flags: [THINK],
+    correction: { better: "Last week we tracked down and fixed a major bug.", why: "'Track down' and 'major' sound more natural." },
+  },
 ];
 
 export function mockTurn(history: Turn[]): TurnAnalysis {
