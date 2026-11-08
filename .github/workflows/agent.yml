@@ -26,8 +26,11 @@ env:
 jobs:
   decide:
     # Cheap filters first; everything else is decided (and logged) by decide.mjs.
+    # Agent Review is started by a workflow_run (not a pull_request), so GitHub
+    # reports its runs with event "workflow_run"; let those through explicitly.
     if: >-
-      (github.event_name != 'workflow_run' || github.event.workflow_run.event == 'pull_request') &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.event == 'pull_request' ||
+       (github.event.workflow_run.name == 'Agent Review' && github.event.workflow_run.conclusion != 'skipped')) &&
       (github.event_name != 'issue_comment' || github.event.comment.user.type != 'Bot') &&
       (github.event_name != 'issues' || github.event.label.name == 'agent')
     runs-on: ubuntu-latest

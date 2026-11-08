@@ -50,8 +50,8 @@ The default model is `gemini-3.8-flash`. Override it with `GEMINI_MODEL`.
    - Require a pull request before merging
    - Require status checks: `Typecheck, unit tests, build`, `UI tests (Playwright)`, `agent/security-review`
      (they appear in the list after the first PR has run)
-5. **Optional, auto-merge:** Settings → General → *Allow auto-merge*, then Settings → Secrets and variables → Actions → **Variables** → `AGENT_AUTO_MERGE` = `true`.
-   Leave this off for the first couple of weeks and merge yourself.
+5. **Optional, auto-merge:** Settings → Secrets and variables → Actions → **Variables** → `AGENT_AUTO_MERGE` = `true`.
+   The pipeline then merges a PR itself only when tests pass, the security review approves with nothing above low severity, and the reviewer rates it **high confidence**: small, matches the issue, tested, and stays out of API routes, `lib/ai`, storage, dependencies and config. Everything else waits for you, with the reason on the PR. This works on any GitHub plan.
 6. **Optional, full HTML test reports:** Settings → Pages → Deploy from branch → `test-media` / root.
    (Appears after the first PR. Pages on private repos needs a paid plan; without it, the comment links to the run instead.)
 
@@ -78,7 +78,7 @@ Each issue gets **one** status comment that edits itself. You're only notified w
 | Variable | Default | |
 |---|---|---|
 | `AGENT_MAX_FIX_ATTEMPTS` | `3` | Automatic fix tries before it stops and asks you |
-| `AGENT_AUTO_MERGE` | `false` | Merge automatically when tests and review pass |
+| `AGENT_AUTO_MERGE` | `false` | Merge automatically when tests and review pass **and** the reviewer rates the PR high confidence |
 
 ### Safety
 

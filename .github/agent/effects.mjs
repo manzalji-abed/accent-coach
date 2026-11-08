@@ -1,4 +1,4 @@
-import { LABELS, MARK } from "./config.mjs";
+import { LABELS, MARK, formatReviewMeta } from "./config.mjs";
 
 /**
  * Turns decisions and agent results into a list of GitHub operations.
@@ -21,6 +21,16 @@ const status = (target, text, runUrl) => ({
   marker: MARK.status,
   body: `${MARK.status}\n**Agent status:** ${text}${runUrl ? `\n\n[View the run](${runUrl})` : ""}`,
 });
+
+/** After an agent PR is merged or closed: tidy labels, say so, start the next PLAN.md item. */
+function doneOps(d) {
+  return d.merged
+    ? [{ op: "removeLabels", target: d.issue, labels: ALL_STATE }, status(d.issue, `shipped in #${d.pr}.`), { op: "startNextQueued" }]
+    : [
+        { op: "removeLabels", target: d.issue, labels: ALL_STATE },
+        status(d.issue, `#${d.pr} was closed without merging. Comment \`/agent retry\` to try again from scratch.`),
+      ];
+}
 
 /** Ops to run before the agent starts (or instead of it, for simple actions). */
 export function planBefore(d, { runUrl, maxFixAttempts = 3 } = {}) {
@@ -62,22 +72,42 @@ export function planBefore(d, { runUrl, maxFixAttempts = 3 } = {}) {
         ...(d.pr ? [{ op: "removeLabels", target: d.pr, labels: ALL_STATE }] : []),
         status(d.issue, "stopped. Add the `agent` label or comment `/agent retry` to start again."),
       ];
-    case "ready":
+    case "ready": {
+      const labels = [...(d.issue ? swap(d.issue, [LABELS.inReview]) : []), ...swap(d.pr, [LABELS.inReview])];
+      const readyComment = (note) => ({
+        op: "upsertComment",
+        target: d.pr,
+        marker: `${MARK.any}ready -->`,
+        body: `${MARK.any}ready -->\n✅ **Tests and security review passed.** Ready for you to merge.${note ? `\n\n${note}` : ""}`,
+      });
+      if (d.autoMerge) {
+        // The pipeline merges itself (works on any GitHub plan). Merges made with
+        // the Actions token don't fire the "PR closed" workflow, so the
+        // after-merge steps run right here instead.
+        return [
+          ...labels,
+          ...(d.issue ? [status(d.issue, `#${d.pr} passed tests and security review with high confidence. Merging automatically.`)] : []),
+          {
+            op: "merge",
+            pr: d.pr,
+            sha: d.headSha,
+            then: doneOps({ merged: true, issue: d.issue, pr: d.pr }),
+            otherwise: [
+              ...(d.issue ? [status(d.issue, `#${d.pr} passed tests and security review. Ready for you to merge.`)] : []),
+              readyComment("I tried to merge it automatically, but GitHub refused ({error}). Please take a look and merge it yourself."),
+            ],
+          },
+        ];
+      }
+      const why = d.manualReason ? `Not merged automatically: ${d.manualReason}` : "";
       return [
-        ...(d.issue ? swap(d.issue, [LABELS.inReview]) : []),
-        ...swap(d.pr, [LABELS.inReview]),
-        ...(d.issue ? [status(d.issue, `#${d.pr} passed tests and security review.${d.autoMerge ? " Merging automatically." : " Ready for you to merge."}`)] : []),
-        ...(d.autoMerge
-          ? [{ op: "enableAutoMerge", pr: d.pr }]
-          : [{ op: "upsertComment", target: d.pr, marker: `${MARK.any}ready -->`, body: `${MARK.any}ready -->\n✅ **Tests and security review passed.** Ready for you to merge.` }]),
+        ...labels,
+        ...(d.issue ? [status(d.issue, `#${d.pr} passed tests and security review. Ready for you to merge.${why ? ` ${why}` : ""}`)] : []),
+        readyComment(why),
       ];
+    }
     case "done":
-      return d.merged
-        ? [{ op: "removeLabels", target: d.issue, labels: ALL_STATE }, status(d.issue, `shipped in #${d.pr}.`), { op: "startNextQueued" }]
-        : [
-            { op: "removeLabels", target: d.issue, labels: ALL_STATE },
-            status(d.issue, `#${d.pr} was closed without merging. Comment \`/agent retry\` to try again from scratch.`),
-          ];
+      return doneOps(d);
     case "setup":
       return [
         {
@@ -181,15 +211,33 @@ export function planFixResult(d, result, { runUrl } = {}) {
 export function planReview(result, { pr, sha, runUrl, context }) {
   const ok = result?.verdict === "approve";
   const findings = Array.isArray(result?.findings) ? result.findings : [];
+  // Model-written text must never be able to forge the hidden meta marker (or any other).
+  const clean = (s) => String(s ?? "").replace(/<!--|-->/g, "");
+  const cell = (s) => clean(s).replace(/\|/g, "\\|").replace(/\n/g, " ");
   const rows = findings
     .slice(0, 15)
-    .map((f) => `| ${f.severity ?? "?"} | \`${f.file ?? "?"}${f.line ? `:${f.line}` : ""}\` | ${String(f.issue ?? "").replace(/\|/g, "\\|")} | ${String(f.fix ?? "").replace(/\|/g, "\\|")} |`);
+    .map((f) => `| ${cell(f.severity ?? "?")} | \`${cell(f.file ?? "?")}${f.line ? `:${Number(f.line) || ""}` : ""}\` | ${cell(f.issue)} | ${cell(f.fix)} |`);
+  // Auto-merge eligibility is decided here, in code: the model's "high" only
+  // counts when it also approved and every finding is low severity.
+  const confidence = ["high", "medium", "low"].includes(result?.confidence) ? result.confidence : null;
+  const reason = clean(result?.confidence_reason).trim();
+  const serious = findings.filter((f) => f.severity !== "low").length;
+  const eligible = ok && confidence === "high" && serious === 0;
+  const why = !ok
+    ? "the review didn't approve it"
+    : confidence !== "high"
+      ? `the reviewer's confidence is ${confidence ?? "missing"}${reason ? ` (${reason})` : ""}`
+      : serious
+        ? `the review has ${serious} finding${serious === 1 ? "" : "s"} above low severity`
+        : "";
   const body = [
     MARK.review,
     `### ${ok ? "✅ Security review: approved" : result ? "❌ Security review: changes requested" : "⚠️ Security review didn't finish"}`,
     "",
-    result?.summary ?? `[See the logs](${runUrl})`,
+    result?.summary != null ? clean(result.summary) : `[See the logs](${runUrl})`,
+    ...(ok && confidence ? ["", `**Confidence:** ${confidence}${reason ? `. ${reason}` : ""}`] : []),
     ...(rows.length ? ["", "| Severity | Where | Issue | Fix |", "|---|---|---|---|", ...rows] : []),
+    formatReviewMeta({ sha, eligible, why }),
   ].join("\n");
   return [
     { op: "upsertComment", target: pr, marker: MARK.review, body },

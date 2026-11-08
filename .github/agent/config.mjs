@@ -34,12 +34,56 @@ export const REVIEW_STATUS_CONTEXT = "agent/security-review";
 export const CI_WORKFLOW = "CI";
 export const REVIEW_WORKFLOW = "Agent Review";
 
+/**
+ * A PR touching any of these always waits for a human, whatever the reviewer
+ * says: server code, AI prompts and guards, stored data, dependencies, build,
+ * deploy and pipeline config, secrets.
+ */
+export const SENSITIVE_PATHS = [
+  /^app\/api\//,
+  /^lib\/ai\//,
+  /^lib\/store\.ts$/,
+  /^package(-lock)?\.json$/,
+  /^\.github\//,
+  /^\.env/,
+  /^wrangler\.jsonc?$/,
+  /^(next|open-next|playwright|vitest)\.config\./,
+  /^tsconfig\.json$/,
+];
+export const sensitiveFiles = (files = []) => files.filter((f) => SENSITIVE_PATHS.some((re) => re.test(f)));
+
 export function readConfig(env = process.env) {
   const max = parseInt(env.AGENT_MAX_FIX_ATTEMPTS ?? "", 10);
   return {
     maxFixAttempts: Number.isFinite(max) && max > 0 ? max : 3,
+    // Only ever merges PRs the reviewer rated high confidence; see decide.mjs.
     autoMerge: String(env.AGENT_AUTO_MERGE ?? "").toLowerCase() === "true",
   };
+}
+
+/**
+ * The review comment carries a hidden line the Agent workflow reads later to
+ * decide whether it may merge on its own:
+ *   <!-- agent:review-meta {"sha":"…","eligible":true,"why":"…"} -->
+ * `sha` pins it to the reviewed commit, so a later push can't inherit it.
+ */
+// Anchored to the end: the genuine marker is always the comment's last line,
+// after any model-written text (which planReview also strips of comment markers).
+const META_RE = /<!-- agent:review-meta (\{[^\n]*\}) -->\s*$/;
+export function formatReviewMeta(meta) {
+  const safe = { ...meta, why: String(meta.why ?? "").replace(/-->|<!--/g, "").slice(0, 300) };
+  return `<!-- agent:review-meta ${JSON.stringify(safe)} -->`;
+}
+export function readReviewMeta(comments = []) {
+  // Only the review job's own account counts: the coding agent (claude[bot]) must never be able to vouch for itself.
+  const review = comments.find((c) => c.author === "github-actions[bot]" && c.body.startsWith(MARK.review));
+  const m = review?.body.match(META_RE);
+  if (!m) return null;
+  try {
+    return JSON.parse(m[1]);
+  } catch {
+    return null;
+  }
 }
 
 export const issueFromBranch = (ref) => {

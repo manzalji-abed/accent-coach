@@ -95,12 +95,35 @@ export class GitHub {
     return this.req("POST", `/repos/${this.repo}/actions/runs/${runId}/rerun-failed-jobs`);
   }
 
-  async enableAutoMerge(prNumber) {
-    const p = await this.req("GET", `/repos/${this.repo}/pulls/${prNumber}`);
-    return this.req("POST", "/graphql", {
-      query: "mutation($id: ID!) { enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: SQUASH }) { clientMutationId } }",
-      variables: { id: p.node_id },
-    });
+  /** The open PR whose head commit has a status `context` linking to `targetUrl`. */
+  async findPrByStatus(context, targetUrl) {
+    const prs = [];
+    for (let page = 1; page <= 10; page++) {
+      const batch = await this.req("GET", `/repos/${this.repo}/pulls?state=open&per_page=100&page=${page}`);
+      prs.push(...batch);
+      if (batch.length < 100) break;
+    }
+    for (const p of prs) {
+      const statuses = await this.req("GET", `/repos/${this.repo}/commits/${p.head.sha}/statuses?per_page=100`);
+      if (statuses.some((s) => s.context === context && s.target_url === targetUrl)) return { number: p.number, sha: p.head.sha, headRef: p.head.ref };
+    }
+    return null;
+  }
+
+  /** Paths of every file the PR changes (GitHub caps this list at 3000). */
+  async listPrFiles(prNumber) {
+    const out = [];
+    for (let page = 1; page <= 30; page++) {
+      const batch = await this.req("GET", `/repos/${this.repo}/pulls/${prNumber}/files?per_page=100&page=${page}`);
+      out.push(...batch.map((f) => f.filename));
+      if (batch.length < 100) break;
+    }
+    return out;
+  }
+
+  /** Squash-merges only if the head is still `sha`, so an unreviewed commit can never slip in. */
+  mergePull(prNumber, sha) {
+    return this.req("PUT", `/repos/${this.repo}/pulls/${prNumber}/merge`, { merge_method: "squash", sha });
   }
 
   async listOpenIssuesWithLabel(label) {
@@ -158,14 +181,19 @@ export async function execOps(gh, ops, log = console.log) {
       case "setStatus":
         await gh.setStatus(o.sha, o);
         break;
-      case "enableAutoMerge":
+      case "merge": {
+        let error = null;
         try {
-          await gh.enableAutoMerge(o.pr);
+          await gh.mergePull(o.pr, o.sha);
         } catch (e) {
-          // Usually: auto-merge isn't enabled in repo settings. Say so on the PR.
-          await gh.createComment(o.pr, `<!-- agent:automerge-failed -->\nCouldn't turn on auto-merge (${String(e.message).slice(0, 120)}). Enable "Allow auto-merge" in repo settings, or merge manually.`);
+          // Conflicts, a newer commit, or branch rules. Leave it to the human and say why.
+          const msg = String(e.message);
+          error = (msg.match(/"message":"([^"]+)"/)?.[1] ?? msg.replace(/^\w+ \S+ -> /, "")).slice(0, 160);
         }
+        if (error === null) await execOps(gh, o.then ?? [], log);
+        else await execOps(gh, (o.otherwise ?? []).map((x) => (x.body ? { ...x, body: x.body.replace("{error}", error) } : x)), log);
         break;
+      }
       case "startNextQueued": {
         const [next] = await gh.listOpenIssuesWithLabel(LABELS.queued);
         if (next) await gh.dispatch("agent-start", { issue: next.number });
