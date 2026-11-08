@@ -36,6 +36,7 @@ const MAX_RESTARTS_PER_MIN = 2;
 const MIC_CONSTRAINTS: MediaStreamConstraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } };
 /** No mic audio for this long while the audio engine runs means the phone stopped the mic: reconnect it. */
 const MIC_STALL_MS = 1500;
+const MAX_MIC_RESTARTS_PER_MIN = 3;
 /** The device's built-in voice (Play native, Hear it) is playing: keep it out of the mic. */
 const builtInVoiceSpeaking = () => typeof window !== "undefined" && Boolean(window.speechSynthesis?.speaking);
 
@@ -90,6 +91,8 @@ export function useLiveCoach(opts: {
     /** Last time the mic delivered audio; iOS can silently stop the mic after its own voice plays. */
     lastChunkAt: 0,
     micRestarting: false,
+    micRestarts: [] as number[],
+    nudgeTimer: undefined as ReturnType<typeof setTimeout> | undefined,
     node: null as AudioWorkletNode | null,
     driver: null as Driver | null,
     transcript: null as LiveTranscript | null,
@@ -349,6 +352,7 @@ export function useLiveCoach(opts: {
       }
       if (sc.outputTranscription?.text) {
         s.stats.outText++;
+        s.lastAudioAt = now;
         t.heardCoach(sc.outputTranscription.text, now);
       }
       if (sc.interrupted) {
@@ -376,8 +380,10 @@ export function useLiveCoach(opts: {
       s.lastNudgeAt = now;
       s.diag?.("silent-turn");
       session.sendClientContent({ turns: [{ role: "user", parts: [{ text: NUDGE_TEXT }] }], turnComplete: true });
-      setTimeout(() => {
-        if (s.closing || s.lastAudioAt > now) return;
+      const gen = s.gen;
+      clearTimeout(s.nudgeTimer);
+      s.nudgeTimer = setTimeout(() => {
+        if (s.closing || s.gen !== gen || s.lastAudioAt > now) return; // the coach answered (voice or words)
         void restart("still silent after nudge");
       }, NUDGE_WAIT_MS);
     };
@@ -465,6 +471,7 @@ export function useLiveCoach(opts: {
     if (s.restarting || s.restarts.length >= MAX_RESTARTS_PER_MIN) return fail("dropped");
     s.restarts.push(now);
     s.restarting = true;
+    clearTimeout(s.nudgeTimer);
     s.diag?.("restart", { reason });
     const gen = s.gen;
     s.driver?.close();
@@ -497,6 +504,8 @@ export function useLiveCoach(opts: {
     s.closing = true;
     s.listening = false;
     clearInterval(watchdogRef.current);
+    clearTimeout(s.nudgeTimer);
+    s.micRestarts = [];
     s.driver?.close();
     s.driver = null;
     stopPlayback();
@@ -543,6 +552,11 @@ export function useLiveCoach(opts: {
     const ctx = s.ctx;
     const node = s.node;
     if (s.micRestarting || s.closing || !ctx || !node) return;
+    // If the phone keeps the mic blocked (a call, another app), stop retrying and say so.
+    const t0 = performance.now();
+    s.micRestarts = s.micRestarts.filter((t) => t0 - t < 60_000);
+    if (s.micRestarts.length >= MAX_MIC_RESTARTS_PER_MIN) return fail("dropped");
+    s.micRestarts.push(t0);
     s.micRestarting = true;
     s.diag?.("mic-restart", { reason });
     const gen = s.gen;
