@@ -18,5 +18,9 @@
   // Preview URLs would be public *.workers.dev links that share GEMINI_API_KEY. Keep them off
   // unless Cloudflare Access is enabled for preview URLs in the Worker's settings first.
   "preview_urls": false,
+  // PR branches on Cloudflare run `wrangler preview` (Worker Previews). A preview only gets
+  // the bindings listed here, never production secrets, and MOCK_AI forces demo mode so a
+  // preview can never call Gemini or spend the key.
+  "previews": { "vars": { "MOCK_AI": "1" } },
   "observability": { "enabled": true }
 }
