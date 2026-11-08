@@ -17,6 +17,9 @@ mispronounced words and explains how to fix them.
 | Unit + pipeline tests | `npm test` |
 | Production build | `npm run build` |
 | UI tests (Playwright, fake mic) | `npx playwright test` |
+| Cloudflare build + local run | `npm run preview` |
+
+Deploys: every merge to `main` auto-deploys to Cloudflare Workers (`wrangler.jsonc`, via the OpenNext adapter) at `coaccent.abedmanzalji.com`, behind Cloudflare Access. Don't deploy by hand from a PR, and keep server code compatible with Workers (`nodejs_compat`).
 
 Before pushing, all of `npm run typecheck && npm test && npm run build` must pass.
 Run `npx playwright test` whenever you touch anything under `app/` or `components/`.
