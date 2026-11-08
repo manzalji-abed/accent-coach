@@ -19,18 +19,22 @@ function ClarityChart({ sessions }: { sessions: Session[] }) {
     .slice(-14);
   if (points.length < 2) return <p className="empty">Finish two sessions to see your clarity trend.</p>;
   const w = 320;
-  const h = 120;
-  const pad = 8;
-  const x = (i: number) => pad + (i * (w - pad * 2)) / (points.length - 1);
-  const y = (v: number) => h - pad - (v / 100) * (h - pad * 2);
+  const h = 130;
+  const left = 26; // room for the axis labels
+  const pad = 10;
+  // Zoom to the range the learner actually moves in, so progress is visible.
+  const lo = Math.max(0, Math.min(60, Math.floor((Math.min(...points) - 5) / 10) * 10));
+  const grid = [lo, Math.round((lo + 100) / 2), 100];
+  const x = (i: number) => left + (i * (w - left - pad)) / (points.length - 1);
+  const y = (v: number) => h - pad - ((v - lo) / (100 - lo)) * (h - pad * 2);
   const d = points.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
   return (
     <div className="chart-wrap">
       <svg className="chart" viewBox={`0 0 ${w} ${h}`} role="img" aria-label={`Clarity over your last ${points.length} sessions, latest ${points.at(-1)}%`}>
-        {[50, 75, 100].map((g) => (
+        {grid.map((g) => (
           <g key={g}>
-            <line x1={pad} x2={w - pad} y1={y(g)} y2={y(g)} stroke="var(--line)" strokeDasharray="3 4" />
-            <text x={w - pad} y={y(g) - 3} textAnchor="end" fontSize="9" fill="var(--muted)">
+            <line x1={left} x2={w - pad} y1={y(g)} y2={y(g)} stroke="var(--line)" strokeDasharray="3 4" />
+            <text x={left - 6} y={y(g) + 3} textAnchor="end" fontSize="10" fill="var(--muted)">
               {g}
             </text>
           </g>

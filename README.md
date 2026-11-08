@@ -4,7 +4,9 @@ Talk to an AI coach, see exactly which sounds slipped, and fix them.
 A mobile-first web app powered by Gemini's audio understanding, plus an
 agent pipeline that turns GitHub issues into tested, reviewed pull requests.
 
-<img src="docs/walkthrough.gif" width="280" alt="Speaking a turn, opening a flagged word, finishing a session, and the progress screen">
+<img src="docs/screenshots/02-home.png" width="200" alt="Home"> <img src="docs/screenshots/03-conversation.png" width="200" alt="Conversation with flagged words"> <img src="docs/screenshots/04-said-vs-expected.png" width="200" alt="Said vs Expected card"> <img src="docs/screenshots/06-progress.png" width="200" alt="Progress">
+
+More in [docs/screenshots](docs/screenshots) · [walkthrough GIF](docs/walkthrough.gif)
 
 **What's here**
 
@@ -37,7 +39,10 @@ The default model is `gemini-3.8-flash`. Override it with `GEMINI_MODEL`.
 1. **Push this repo to GitHub** (private is fine).
 2. **Install the Claude GitHub App** on the repo: <https://github.com/apps/claude>.
    This matters: commits the agent pushes as `claude[bot]` trigger CI. (Pushes made with the default Actions token don't.)
-3. **Add a secret:** Settings → Secrets and variables → Actions → *New repository secret* → `ANTHROPIC_API_KEY`.
+3. **Add one secret** (Settings → Secrets and variables → Actions → *New repository secret*). Pick either:
+   - `CLAUDE_CODE_OAUTH_TOKEN` **(uses your Claude Pro/Max plan, no API billing).** On your computer run `claude setup-token`, sign in, and paste the token it prints. Agent runs count toward your plan's usage limits, the same as using Claude Code yourself.
+   - `ANTHROPIC_API_KEY` (pay per use, from [console.anthropic.com](https://console.anthropic.com)). Better if many people trigger it or you don't want it eating your own limits.
+
    CI never needs your Gemini key; tests run in demo mode.
 4. **Protect `main`:** Settings → Rules → Rulesets → New branch ruleset for `main`:
    - Require a pull request before merging

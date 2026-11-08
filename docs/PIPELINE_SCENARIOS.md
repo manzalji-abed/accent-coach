@@ -345,13 +345,13 @@ me labeled "agent" on #1 -> noop (PR #2 is already open for this issue)
 me labeled "agent" on #3 -> noop (a run is already in progress)
 ```
 
-## 21. Missing ANTHROPIC_API_KEY: one clear setup comment; retry after adding it works
+## 21. No Claude credentials yet: one clear setup comment; retry after adding them works
 
 **Result:** passed
 
 ```
-me labeled "agent" on #1 -> setup (ANTHROPIC_API_KEY secret is missing)
-me commented on #1: "/agent retry" -> setup (ANTHROPIC_API_KEY secret is missing)
+me labeled "agent" on #1 -> setup (no Claude credentials (ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN))
+me commented on #1: "/agent retry" -> setup (no Claude credentials (ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN))
 me commented on #1: "/agent retry" -> build:resume (/agent retry)
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #2 -> success

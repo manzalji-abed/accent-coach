@@ -84,7 +84,15 @@ export function planBefore(d, { runUrl, maxFixAttempts = 3 } = {}) {
           op: "upsertComment",
           target: d.issue,
           marker: MARK.setup,
-          body: `${MARK.setup}\n**The agent isn't set up yet.** Add an \`ANTHROPIC_API_KEY\` repository secret (Settings → Secrets and variables → Actions), then comment \`/agent retry\`.`,
+          body: [
+            MARK.setup,
+            "**The agent isn't set up yet.** Add one repository secret (Settings → Secrets and variables → Actions):",
+            "",
+            "- `CLAUDE_CODE_OAUTH_TOKEN`: uses your Claude Pro/Max plan. Run `claude setup-token` on your computer and paste the token it prints.",
+            "- or `ANTHROPIC_API_KEY`: a pay-per-use key from console.anthropic.com.",
+            "",
+            "Then comment `/agent retry`.",
+          ].join("\n"),
         },
       ];
     default:

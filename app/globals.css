@@ -441,6 +441,7 @@ a {
   color: var(--muted);
 }
 .score-chip {
+  flex: none;
   font: 700 0.8rem/1 var(--font-display);
   padding: 4px 8px;
   border-radius: 999px;
@@ -891,6 +892,7 @@ a {
 .history summary {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 12px;
   cursor: pointer;
   list-style: none;

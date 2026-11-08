@@ -69,7 +69,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         continue-on-error: true
         with:
+          # Use one: an API key (pay per use) or a Pro/Max subscription token from `claude setup-token`.
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: ${{ steps.prompt.outputs.prompt }}
           allowed_bots: claude
           claude_args: |

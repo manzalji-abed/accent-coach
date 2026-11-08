@@ -52,7 +52,7 @@ jobs:
       - id: decide
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          HAS_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+          HAS_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
         run: node .github/agent/run.mjs decide
 
   build:
@@ -101,7 +101,9 @@ jobs:
         env:
           MOCK_AI: "1"
         with:
+          # Use one: an API key (pay per use) or a Pro/Max subscription token from `claude setup-token`.
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: ${{ steps.prompt.outputs.prompt }}
           claude_args: |
             --max-turns 120
@@ -161,7 +163,9 @@ jobs:
         env:
           MOCK_AI: "1"
         with:
+          # Use one: an API key (pay per use) or a Pro/Max subscription token from `claude setup-token`.
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: ${{ steps.prompt.outputs.prompt }}
           allowed_bots: claude
           claude_args: |

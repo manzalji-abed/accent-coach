@@ -353,7 +353,7 @@ export const SCENARIOS = [
     },
   },
   {
-    name: "Missing ANTHROPIC_API_KEY: one clear setup comment; retry after adding it works",
+    name: "No Claude credentials yet: one clear setup comment; retry after adding them works",
     async run() {
       const sim = new PipelineSim({ env: { HAS_ANTHROPIC_KEY: "false" }, script: { build: [PR_OK] } });
       const i = sim.newIssue("x");
@@ -361,7 +361,9 @@ export const SCENARIOS = [
       await sim.settle();
       sim.comment(i, "/agent retry");
       await sim.settle();
-      assert.equal(sim.gh.botComments(i).filter((b) => b.startsWith(MARK.setup)).length, 1, "setup note is not repeated");
+      const setup = sim.gh.botComments(i).filter((b) => b.startsWith(MARK.setup));
+      assert.equal(setup.length, 1, "setup note is not repeated");
+      assert.match(setup[0], /claude setup-token/);
       sim.env.HAS_ANTHROPIC_KEY = "true";
       sim.comment(i, "/agent retry");
       await sim.settle();

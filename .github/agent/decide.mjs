@@ -41,7 +41,7 @@ export function decide(ctx) {
     if (issue.isPr) return noop("agent label on a PR is not a trigger; comment /agent on the PR instead");
     if (issue.state !== "open") return noop("issue is closed");
     if (!ctx.actorCanWrite) return noop(`${ctx.actor} does not have write access`);
-    if (!ctx.hasAnthropicKey) return { action: "setup", reason: "ANTHROPIC_API_KEY secret is missing", issue: issue.number };
+    if (!ctx.hasAnthropicKey) return { action: "setup", reason: "no Claude credentials (ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN)", issue: issue.number };
     if (issue.labels.includes(LABELS.working)) return noop("a run is already in progress");
     if (ctx.openAgentPr) return noop(`PR #${ctx.openAgentPr} is already open for this issue`);
     return { action: "build", mode: "start", reason: "agent label added", issue: issue.number };
@@ -65,7 +65,7 @@ export function decide(ctx) {
     if (issue.state !== "open") return noop("closed");
 
     if (!ctx.hasAnthropicKey && (command || hasAnyAgentState(issue.labels))) {
-      return { action: "setup", reason: "ANTHROPIC_API_KEY secret is missing", issue: ctx.linkedIssue ?? issue.number };
+      return { action: "setup", reason: "no Claude credentials (ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN)", issue: ctx.linkedIssue ?? issue.number };
     }
 
     if (issue.isPr) {
@@ -128,7 +128,7 @@ export function decide(ctx) {
     if (payload.action !== "agent-start") return noop(`unknown dispatch ${payload.action}`);
     const issue = ctx.issue;
     if (!issue || issue.state !== "open") return noop("queued issue is closed");
-    if (!ctx.hasAnthropicKey) return { action: "setup", reason: "ANTHROPIC_API_KEY secret is missing", issue: issue.number };
+    if (!ctx.hasAnthropicKey) return { action: "setup", reason: "no Claude credentials (ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN)", issue: issue.number };
     if (issue.labels.includes(LABELS.working) || ctx.openAgentPr) return noop("already started");
     return { action: "build", mode: "start", reason: "next item in PLAN.md", issue: issue.number, addTrigger: true };
   }
