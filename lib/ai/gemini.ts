@@ -60,6 +60,10 @@ export async function generateJson(opts: {
   if (opts.audio) parts.push({ inlineData: { mimeType: "audio/wav", data: Buffer.from(opts.audio).toString("base64") } });
 
   let raw: string;
+  // A plain timer + controller rather than AbortSignal.timeout(): a summary call on
+  // Cloudflare was seen aborting within a second, far short of the timeout.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
   try {
     // Streaming makes Gemini answer with headers right away, so a slow reply can't
     // trip Cloudflare's "no response within 100 s" limit (error 524).
@@ -73,13 +77,15 @@ export async function generateJson(opts: {
         temperature: 0.4,
         // Gemini 3 thinks at length by default. Low keeps feedback fast and about halves the cost.
         thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-        abortSignal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
+        abortSignal: controller.signal,
       },
     });
     raw = await collectStreamText(stream);
   } catch (err) {
-    console.error("Gemini request failed", (err as { status?: number }).status, (err as Error).message);
+    console.error("Gemini request failed", (err as { status?: number }).status, (err as Error).message, controller.signal.aborted ? "(our timeout)" : "");
     throw aiErrorFrom(err);
+  } finally {
+    clearTimeout(timer);
   }
   if (!raw) throw new AiError("The coach didn't answer. Try again.", 502);
   try {

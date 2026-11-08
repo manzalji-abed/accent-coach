@@ -34,6 +34,8 @@ export class LiveTranscript {
   private user: { id: string; text: string; start: number } | null = null;
   private lastUser: { id: string; text: string; end: number } | null = null;
   private coach: { id: string; text: string } | null = null;
+  /** The coach has said something (voice or words) since the learner's last turn began. */
+  private answered = true;
 
   constructor(
     private readonly ev: TranscriptEvents,
@@ -59,6 +61,7 @@ export class LiveTranscript {
       }
       if (this.coach) this.coachDone(); // the learner jumped in
       this.user = { id: this.newId(), text: "", start: now - SPEECH_LEAD_MS };
+      this.answered = false;
     }
     this.user.text += fragment;
     const text = tidy(this.user.text);
@@ -83,6 +86,17 @@ export class LiveTranscript {
   /** The coach finished, or was interrupted. */
   coachDone() {
     this.coach = null;
+  }
+
+  /**
+   * Gemini says the coach's turn is over. Ends any learner turn still open and
+   * returns true if the learner spoke but the coach never answered (no voice,
+   * no words): a silent turn, which leaves the learner waiting forever.
+   */
+  modelTurnComplete(now: number): boolean {
+    this.endUser(now);
+    this.coach = null;
+    return !this.answered;
   }
 
   /** The coach's silent review_turn call. Applies to the learner's current or most recent turn. */
@@ -117,6 +131,7 @@ export class LiveTranscript {
   }
 
   private startCoach() {
+    this.answered = true;
     if (!this.coach) {
       this.coach = { id: this.firstCoachId ?? this.newId(), text: "" };
       this.firstCoachId = undefined;

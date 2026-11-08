@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { DemoNotice } from "@/components/DemoNotice";
+import { CorrectionSheet } from "@/components/CorrectionSheet";
 import { CloseIcon, SpeakerIcon } from "@/components/icons";
 import { MicButton, type MicState } from "@/components/MicButton";
 import { SessionSummary } from "@/components/SessionSummary";
@@ -14,7 +15,7 @@ import { useLiveCoach, type LiveStatus } from "@/lib/live/useLiveCoach";
 import { scenarioById } from "@/lib/scenarios";
 import { speak, stopSpeaking } from "@/lib/speech";
 import { newId, saveSession } from "@/lib/store";
-import type { Session, Takeaway, WordFlag } from "@/lib/types";
+import type { Correction, Session, Takeaway, WordFlag } from "@/lib/types";
 
 const MIC_STATE: Record<LiveStatus, MicState> = { idle: "idle", connecting: "requesting", listening: "recording", paused: "paused" };
 const MIC_LABEL: Record<LiveStatus, string> = {
@@ -39,7 +40,8 @@ function TalkScreen() {
     speakingSeconds: 0,
   }));
   const [clips, setClips] = useState<Record<string, string>>({});
-  const [open, setOpen] = useState<{ flag: WordFlag; clip?: string } | null>(null);
+  const [open, setOpen] = useState<{ flag: WordFlag; clip?: string; text?: string } | null>(null);
+  const [fix, setFix] = useState<{ said: string; correction: Correction } | null>(null);
   const [finished, setFinished] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
@@ -172,25 +174,19 @@ function TalkScreen() {
             </div>
           ) : (
             <div key={t.id} className="bubble user" data-testid="user-bubble">
-              <Transcript text={t.text} flags={t.flags ?? []} onPick={(flag) => setOpen({ flag, clip: clips[t.id] })} />
+              <Transcript text={t.text} flags={t.flags ?? []} onPick={(flag) => setOpen({ flag, clip: clips[t.id], text: t.text })} />
               <div className="bubble-meta">
+                {t.correction && (
+                  <button type="button" className="correction-chip" data-testid="correction-chip" onClick={() => setFix({ said: t.text, correction: t.correction! })}>
+                    Better way to say it
+                  </button>
+                )}
                 {typeof t.clarity === "number" && (
                   <span className="score-chip" data-low={t.clarity < 75} aria-label={`Clarity ${t.clarity} percent`}>
                     {t.clarity}%
                   </span>
                 )}
               </div>
-              {t.correction && (
-                <div className="correction" data-testid="correction">
-                  <p>
-                    <span className="correction-label">Better:</span> {t.correction.better}
-                  </p>
-                  {t.correction.why && <p className="correction-why">{t.correction.why}</p>}
-                  <button type="button" className="speak-again" onClick={() => speak(t.correction!.better, accent)}>
-                    <SpeakerIcon size={14} /> Hear it
-                  </button>
-                </div>
-              )}
             </div>
           ),
         )}
@@ -220,7 +216,16 @@ function TalkScreen() {
         </div>
       </div>
 
-      {open && <WordSheet flag={open.flag} accent={accent} clipUrl={open.clip} playClip={live.playClip} onClose={() => setOpen(null)} />}
+      {open && (
+        <WordSheet
+          flag={open.flag}
+          accent={accent}
+          clipUrl={open.clip}
+          playClip={(url) => live.playClip(url, open.text ? { text: open.text, word: open.flag.word } : undefined)}
+          onClose={() => setOpen(null)}
+        />
+      )}
+      {fix && <CorrectionSheet said={fix.said} correction={fix.correction} accent={accent} onClose={() => setFix(null)} />}
     </div>
   );
 }

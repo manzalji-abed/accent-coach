@@ -1,0 +1,54 @@
+"use client";
+import { useEffect, useRef } from "react";
+import { speak } from "@/lib/speech";
+import type { Accent, Correction } from "@/lib/types";
+import { SpeakerIcon } from "./icons";
+
+/** "Better way to say it": the learner's sentence next to a more natural version, as a bottom sheet. */
+export function CorrectionSheet(props: { said: string; correction: Correction; accent: Accent; onClose: () => void }) {
+  const { said, correction, accent, onClose } = props;
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-fix" data-testid="correction-sheet">
+        <div className="sheet-grip" />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2 id="sheet-fix">Better way to say it</h2>
+          <button ref={closeRef} type="button" className="small-btn" onClick={onClose}>
+            Done
+          </button>
+        </div>
+
+        <div className="compare compare-stack">
+          <div className="said">
+            <small>You said</small>
+            <p>{said}</p>
+          </div>
+          <div className="expected">
+            <small>Try</small>
+            <p>{correction.better}</p>
+          </div>
+        </div>
+
+        {correction.why && (
+          <div className="tip">
+            <p>{correction.why}</p>
+          </div>
+        )}
+
+        <button type="button" className="btn" style={{ width: "100%" }} onClick={() => speak(correction.better, accent, { rate: 0.9 })}>
+          <SpeakerIcon size={20} /> Hear it
+        </button>
+      </div>
+    </>
+  );
+}

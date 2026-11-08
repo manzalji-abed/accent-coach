@@ -33,7 +33,9 @@ export function liveConnectConfig(opts: { accent: Accent; scenario: Scenario }):
             name: REVIEW_TOOL,
             description: "Silently record pronunciation feedback for the learner's last turn. Call once after every learner turn. Never mention it out loud.",
             parameters: reviewToolParams as unknown as Schema,
-            behavior: Behavior.NON_BLOCKING,
+            // Blocking: the coach waits for the app's instant answer, then always carries on talking.
+            // Non-blocking + a silent answer let it end turns without replying (seen on a real phone).
+            behavior: Behavior.BLOCKING,
           },
         ],
       },

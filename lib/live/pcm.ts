@@ -103,3 +103,29 @@ export class ClipBuffer {
     this.chunks = [];
   }
 }
+
+/**
+ * Roughly where one word sits in a recording of a sentence, in seconds.
+ *
+ * Live transcription has no word timings, so this spreads the words over the
+ * frames that actually contain speech (pauses skipped), weighting each word by
+ * its length. Good enough to replay "comfortable" instead of the whole
+ * sentence. Returns null if the word isn't in the text or there's too little speech.
+ */
+export function estimateWordSpan(samples: Float32Array, sampleRate: number, text: string, word: string, padMs = 120): { start: number; end: number } | null {
+  const tokens: string[] = text.toLowerCase().match(/[a-z0-9']+/g) ?? [];
+  const target = word.toLowerCase().replace(/[^a-z0-9']/g, "");
+  const index = tokens.indexOf(target);
+  if (index < 0 || !samples.length) return null;
+  const frame = Math.max(1, Math.round(sampleRate * 0.02)); // 20 ms
+  const speech: number[] = [];
+  for (let i = 0; i + frame <= samples.length; i += frame) if (speechLevel(samples.subarray(i, i + frame)) >= SPEECH_THRESHOLD) speech.push(i);
+  if (speech.length < tokens.length) return null;
+  const weights = tokens.map((t) => Math.max(2, t.length));
+  const total = weights.reduce((a, b) => a + b, 0);
+  const before = weights.slice(0, index).reduce((a, b) => a + b, 0);
+  const first = speech[Math.min(speech.length - 1, Math.floor((before / total) * speech.length))];
+  const last = speech[Math.max(0, Math.min(speech.length - 1, Math.ceil(((before + weights[index]) / total) * speech.length) - 1))] + frame;
+  const pad = (padMs / 1000) * sampleRate;
+  return { start: Math.max(0, first - pad) / sampleRate, end: Math.min(samples.length, last + pad) / sampleRate };
+}

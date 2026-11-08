@@ -711,6 +711,31 @@ a {
   gap: 10px;
   margin: 16px 0;
 }
+/* Whole sentences need the full width: stack them. */
+.compare-stack {
+  grid-template-columns: 1fr;
+}
+.compare-stack p {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.4;
+}
+.compare-stack .expected p {
+  font-weight: 700;
+  color: var(--clear);
+}
+/* On a learner bubble: opens the "Better way to say it" sheet. */
+.correction-chip {
+  margin-right: auto;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1.5px solid var(--clear);
+  background: var(--card);
+  color: var(--clear);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
 .compare > div {
   padding: 14px;
   border-radius: 18px;

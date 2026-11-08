@@ -6,6 +6,7 @@ import {
   base64ToBytes,
   bytesToBase64,
   ClipBuffer,
+  estimateWordSpan,
   floatToPcm16Bytes,
   LIVE_INPUT_MIME,
   micChunkToLive,
@@ -201,7 +202,7 @@ describe("live session config (locked into the token)", () => {
     expect(cfg.outputAudioTranscription).toEqual({});
     const fn = (cfg.tools?.[0] as { functionDeclarations?: { name?: string; behavior?: string; parameters?: unknown }[] } | undefined)?.functionDeclarations?.[0];
     expect(fn?.name).toBe(REVIEW_TOOL);
-    expect(fn?.behavior).toBe("NON_BLOCKING");
+    expect(fn?.behavior).toBe("BLOCKING");
     expect(JSON.stringify(fn?.parameters)).toContain("clarity");
   });
 
@@ -265,5 +266,60 @@ describe("live audio: finding the learner's actual speech for 'Play yours'", () 
     const buf = new ClipBuffer();
     buf.push(new Float32Array(10), 1000, 0.01);
     expect(buf.speechSpan(0, 2000)).toBeNull();
+  });
+});
+
+
+describe("live transcript: spotting a silent coach turn", () => {
+  const make = () => {
+    const done: string[] = [];
+    let n = 0;
+    const t = new LiveTranscript({ userText() {}, userDone: (id) => done.push(id), coachText() {}, review() {} }, () => `t${++n}`, "opener");
+    return { t, done };
+  };
+
+  it("is not silent when the coach opens, or answers the learner", () => {
+    const { t } = make();
+    t.coachAudio(0);
+    expect(t.modelTurnComplete(100)).toBe(false); // opener
+    t.heardUser("Hello", 1000);
+    t.coachAudio(2000);
+    expect(t.modelTurnComplete(3000)).toBe(false);
+  });
+
+  it("is silent when the learner spoke and the coach ended its turn without a word, and closes the learner's turn", () => {
+    const { t, done } = make();
+    t.heardUser("I like my job", 1000);
+    t.reviewed({ clarity: 90, flags: [], better: "", why: "" });
+    expect(t.modelTurnComplete(2000)).toBe(true);
+    expect(done).toEqual(["t1"]); // the clip can still be made for "Play yours"
+    t.coachAudio(2500); // after the nudge the coach answers
+    expect(t.modelTurnComplete(3000)).toBe(false);
+  });
+});
+
+describe("live audio: finding one word inside a sentence recording", () => {
+  const rate = 1000; // 1 kHz keeps the numbers readable: 20 samples per 20 ms frame
+  const burst = (ms: number) => new Float32Array(ms).fill(0.5);
+  const quiet = (ms: number) => new Float32Array(ms);
+  const join = (...parts: Float32Array[]) => {
+    const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
+    let o = 0;
+    for (const p of parts) out.set(p, (o += p.length) - p.length);
+    return out;
+  };
+
+  it("places the word over the speech, skipping pauses, weighted by word length", () => {
+    // "aaaa" 400 ms, pause, "bbbb" 400 ms, pause, "cccc" 400 ms
+    const samples = join(quiet(200), burst(400), quiet(300), burst(400), quiet(300), burst(400), quiet(200));
+    const span = estimateWordSpan(samples, rate, "aaaa bbbb cccc.", "BBBB", 0)!;
+    expect(span.start).toBeCloseTo(0.9, 1); // second burst starts at 900 ms
+    expect(span.end).toBeCloseTo(1.3, 1);
+  });
+
+  it("returns null for a word that isn't there or a near-silent clip", () => {
+    const samples = join(burst(400), burst(400));
+    expect(estimateWordSpan(samples, rate, "hello there", "banana")).toBeNull();
+    expect(estimateWordSpan(quiet(800), rate, "hello there", "there")).toBeNull();
   });
 });

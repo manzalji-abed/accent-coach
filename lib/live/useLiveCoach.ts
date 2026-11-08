@@ -5,7 +5,7 @@ import { mockTurn } from "../ai/mock";
 import { REVIEW_TOOL } from "../ai/prompts";
 import { speak, stopSpeaking } from "../speech";
 import type { Accent, Turn } from "../types";
-import { base64ToBytes, ClipBuffer, LIVE_INPUT_MIME, LIVE_INPUT_RATE, LIVE_OUTPUT_RATE, micChunkToLive, pcm16BytesToFloat, SPEECH_THRESHOLD, speechLevel } from "./pcm";
+import { base64ToBytes, ClipBuffer, estimateWordSpan, LIVE_INPUT_MIME, LIVE_INPUT_RATE, LIVE_OUTPUT_RATE, micChunkToLive, pcm16BytesToFloat, SPEECH_THRESHOLD, speechLevel } from "./pcm";
 import { LiveTranscript, type TranscriptEvents } from "./transcript";
 
 export type LiveStatus = "idle" | "connecting" | "listening" | "paused";
@@ -33,6 +33,17 @@ const MIC_WARMUP_MAX_MS = 5000;
 /** If the learner spoke and the coach sends nothing at all for this long, the session is stuck: restart it. */
 const STUCK_AFTER_MS = 9000;
 const MAX_RESTARTS_PER_MIN = 2;
+const MIC_CONSTRAINTS: MediaStreamConstraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } };
+/** No mic audio for this long while the audio engine runs means the phone stopped the mic: reconnect it. */
+const MIC_STALL_MS = 1500;
+/** The device's built-in voice (Play native, Hear it) is playing: keep it out of the mic. */
+const builtInVoiceSpeaking = () => typeof window !== "undefined" && Boolean(window.speechSynthesis?.speaking);
+
+/** Fixed text (never learner input) sent when the coach ends a turn without answering. */
+const NUDGE_TEXT = "(Answer the learner out loud now and keep the conversation going.)";
+const NUDGE_WAIT_MS = 8000;
+/** What the app answers to review_turn; the coach then carries on. */
+const REVIEW_SAVED = "Saved. Now reply to the learner out loud, without mentioning this.";
 /** How often diagnostics are sent to the server log. */
 const DIAG_FLUSH_MS = 5000;
 
@@ -75,6 +86,10 @@ export function useLiveCoach(opts: {
   const r = useRef({
     ctx: null as AudioContext | null,
     stream: null as MediaStream | null,
+    source: null as MediaStreamAudioSourceNode | null,
+    /** Last time the mic delivered audio; iOS can silently stop the mic after its own voice plays. */
+    lastChunkAt: 0,
+    micRestarting: false,
     node: null as AudioWorkletNode | null,
     driver: null as Driver | null,
     transcript: null as LiveTranscript | null,
@@ -95,6 +110,8 @@ export function useLiveCoach(opts: {
     gen: 0, // bumped on every start and teardown; see start()
     micReady: Promise.resolve() as Promise<void>,
     onFirstAudio: null as null | (() => void),
+    lastAudioAt: 0,
+    lastNudgeAt: 0,
     // stuck-session watchdog: speech heard since the coach last produced anything (voice, words or feedback)
     lastModelAt: 0,
     lastSpeechAt: 0,
@@ -159,8 +176,11 @@ export function useLiveCoach(opts: {
     markSpeakingUntil(performance.now() + (s.playhead - ctx.currentTime) * 1000);
   };
 
-  /** Play the learner's own clip through the live audio engine (loud speaker, not the earpiece). */
-  const playClip = useCallback(async (url: string): Promise<boolean> => {
+  /**
+   * Play the learner's own clip through the live audio engine (loud speaker, not the earpiece).
+   * With a word, plays just that word's estimated stretch of the sentence.
+   */
+  const playClip = useCallback(async (url: string, focus?: { text: string; word: string }): Promise<boolean> => {
     const s = r.current;
     const ctx = s.ctx;
     if (!ctx || ctx.state === "closed") return false;
@@ -171,12 +191,15 @@ export function useLiveCoach(opts: {
       } catch {
         /* already stopped */
       }
+      const span = focus ? estimateWordSpan(buffer.getChannelData(0), buffer.sampleRate, focus.text, focus.word) : null;
+      const offset = span?.start ?? 0;
+      const duration = span ? span.end - span.start : buffer.duration;
       const src = ctx.createBufferSource();
       src.buffer = buffer;
       src.connect(ctx.destination);
-      src.start();
+      src.start(0, offset, duration);
       s.clipSource = src;
-      s.clipPlayingUntil = performance.now() + buffer.duration * 1000 + 200;
+      s.clipPlayingUntil = performance.now() + duration * 1000 + 200;
       return true;
     } catch {
       return false;
@@ -282,7 +305,7 @@ export function useLiveCoach(opts: {
 
   /** Real Gemini Live session, opened straight from the browser with the single-use token. */
   const liveDriver = async (token: TokenResponse): Promise<Driver> => {
-    const { GoogleGenAI, Modality, FunctionResponseScheduling } = await import("@google/genai");
+    const { GoogleGenAI, Modality } = await import("@google/genai");
     const ai = new GoogleGenAI({ apiKey: token.token!, httpOptions: { apiVersion: token.apiVersion } });
     let handle: string | undefined;
     let session: Awaited<ReturnType<typeof ai.live.connect>> | null = null;
@@ -307,9 +330,8 @@ export function useLiveCoach(opts: {
       if (calls.length) {
         s.stats.tools += calls.length;
         for (const call of calls) if (call.name === REVIEW_TOOL) t.reviewed(call.args);
-        session?.sendToolResponse({
-          functionResponses: calls.map((c) => ({ id: c.id, name: c.name, response: { ok: true }, scheduling: FunctionResponseScheduling.SILENT })),
-        });
+        // review_turn is blocking: the coach waits for this answer, then carries on talking.
+        session?.sendToolResponse({ functionResponses: calls.map((c) => ({ id: c.id, name: c.name, response: { result: REVIEW_SAVED } })) });
       }
       const sc = msg.serverContent;
       if (!sc) return;
@@ -320,6 +342,7 @@ export function useLiveCoach(opts: {
       for (const part of sc.modelTurn?.parts ?? []) {
         if (part.inlineData?.data) {
           s.stats.audio++;
+          s.lastAudioAt = now;
           t.coachAudio(now);
           play(part.inlineData.data);
         }
@@ -335,10 +358,28 @@ export function useLiveCoach(opts: {
       }
       if (sc.turnComplete) {
         s.stats.turns++;
-        t.coachDone();
+        const silent = t.modelTurnComplete(now);
         // The learner's next clip starts once the coach has finished talking.
         s.lastClipEnd = Math.max(s.lastClipEnd, now, s.playEndsAt);
+        if (silent) nudge();
       }
+    };
+
+    /**
+     * The coach ended its turn without answering the learner (seen live: a
+     * review, then silence, then a dead session). Ask it to reply; if it still
+     * says nothing, swap in a fresh session with the conversation so far.
+     */
+    const nudge = () => {
+      const now = performance.now();
+      if (!session || now - s.lastNudgeAt < NUDGE_WAIT_MS) return;
+      s.lastNudgeAt = now;
+      s.diag?.("silent-turn");
+      session.sendClientContent({ turns: [{ role: "user", parts: [{ text: NUDGE_TEXT }] }], turnComplete: true });
+      setTimeout(() => {
+        if (s.closing || s.lastAudioAt > now) return;
+        void restart("still silent after nudge");
+      }, NUDGE_WAIT_MS);
     };
 
     const open = async (resume?: string) => {
@@ -465,6 +506,8 @@ export function useLiveCoach(opts: {
       /* already stopped */
     }
     s.clipSource = null;
+    s.source?.disconnect();
+    s.source = null;
     s.node?.port.close();
     s.node?.disconnect();
     s.node = null;
@@ -478,6 +521,47 @@ export function useLiveCoach(opts: {
     stopDiagRef.current = null;
     setLevel(0);
   }
+
+  /** Connect a mic stream to the worklet, and watch for the phone muting or ending it. */
+  const attachMic = (ctx: AudioContext, node: AudioWorkletNode, stream: MediaStream) => {
+    const s = r.current;
+    s.stream = stream;
+    s.source = ctx.createMediaStreamSource(stream);
+    s.source.connect(node);
+    s.lastChunkAt = performance.now();
+    const track = stream.getAudioTracks()[0];
+    if (track) {
+      track.onended = () => void restartMic("ended");
+      track.onmute = () => s.diag?.("mic-mute");
+      track.onunmute = () => s.diag?.("mic-unmute");
+    }
+  };
+
+  /** Swap in a fresh mic stream (permission is already granted, so no prompt). */
+  const restartMic = async (reason: string) => {
+    const s = r.current;
+    const ctx = s.ctx;
+    const node = s.node;
+    if (s.micRestarting || s.closing || !ctx || !node) return;
+    s.micRestarting = true;
+    s.diag?.("mic-restart", { reason });
+    const gen = s.gen;
+    try {
+      s.source?.disconnect();
+      s.stream?.getTracks().forEach((t) => {
+        t.onended = null;
+        t.stop();
+      });
+      const stream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+      if (s.gen !== gen || s.closing) return stream.getTracks().forEach((t) => t.stop());
+      attachMic(ctx, node, stream);
+    } catch (e) {
+      s.diag?.("mic-restart-failed", { message: String((e as Error)?.message ?? "").slice(0, 120) });
+      if (s.gen === gen) fail("dropped");
+    } finally {
+      s.micRestarting = false;
+    }
+  };
 
   const start = async () => {
     setError(null);
@@ -501,24 +585,21 @@ export function useLiveCoach(opts: {
     };
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-      });
+      stream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
     } catch (e) {
       if (stale()) return;
       return fail((e as Error).name === "NotAllowedError" || (e as Error).name === "SecurityError" ? "denied" : "unsupported");
     }
     if (stale()) return stream.getTracks().forEach((t) => t.stop());
-    s.stream = stream;
     try {
       await ctx.audioWorklet.addModule("/live-mic-worklet.js");
-      if (stale()) return;
-      const source = ctx.createMediaStreamSource(stream);
+      if (stale()) return stream.getTracks().forEach((t) => t.stop());
       const node = new AudioWorkletNode(ctx, "live-mic");
       const sink = ctx.createGain();
       sink.gain.value = 0; // keeps the worklet running without playing the mic back
-      source.connect(node).connect(sink).connect(ctx.destination);
+      node.connect(sink).connect(ctx.destination);
       s.node = node;
+      attachMic(ctx, node, stream);
       s.micReady = new Promise<void>((resolve) => (s.onFirstAudio = resolve));
       node.port.onmessage = (e: MessageEvent<Float32Array>) => {
         s.onFirstAudio?.();
@@ -526,6 +607,7 @@ export function useLiveCoach(opts: {
         const lvl = speechLevel(e.data);
         setLevel(s.listening ? lvl : 0);
         const now = performance.now();
+        s.lastChunkAt = now;
         const { base64, pcm16k } = micChunkToLive(e.data, ctx.sampleRate);
         // Buffered from the moment the mic opens (kept only on this device), so the
         // start of a turn is there for "Play yours" even if connecting was slow.
@@ -533,7 +615,7 @@ export function useLiveCoach(opts: {
         if (!s.listening || !s.driver) return;
         // Keep the stream continuous, but send silence for speaker echo (quiet sound while the
         // coach talks) and for the learner's own clip being replayed.
-        const echo = (coachAudible() && lvl < BARGE_IN_LEVEL) || now < s.clipPlayingUntil;
+        const echo = (coachAudible() && lvl < BARGE_IN_LEVEL) || now < s.clipPlayingUntil || builtInVoiceSpeaking();
         if (echo) s.stats.gated++;
         else if (lvl >= SPEECH_THRESHOLD) {
           s.lastSpeechAt = now;
@@ -585,13 +667,17 @@ export function useLiveCoach(opts: {
       // produced nothing at all (no voice, words or feedback) for a while: the session is stuck.
       watchdogRef.current = setInterval(() => {
         const now = performance.now();
+        // iOS can stop the mic (track muted or no frames) after its own voice plays, while the audio engine keeps running.
+        if (s.ctx?.state === "running" && !s.micRestarting && now - s.lastChunkAt > MIC_STALL_MS && !builtInVoiceSpeaking()) {
+          void restartMic("stalled");
+        }
         if (!s.listening || s.restarting || coachAudible()) return;
         if (s.speechMsSinceModel > 1000 && s.lastSpeechAt > s.lastModelAt && now - s.lastSpeechAt > STUCK_AFTER_MS) {
           s.diag?.("stuck", { sinceSpeech: Math.round(now - s.lastSpeechAt), sinceModel: Math.round(now - s.lastModelAt), speechMs: Math.round(s.speechMsSinceModel) });
           s.speechMsSinceModel = 0;
           void restart("no reply after speech");
         }
-      }, 2000);
+      }, 1000);
     }
   };
 

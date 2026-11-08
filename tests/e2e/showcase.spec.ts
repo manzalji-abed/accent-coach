@@ -14,9 +14,15 @@ test("@showcase live talk, see sentence fixes and flagged words, open Said vs Ex
   await expect(bubble).toContainText("comfortable");
   await expect(bubble.getByRole("button", { name: /think: see how to say it/ })).toBeVisible();
   await expect(bubble.getByLabel(/Clarity 78 percent/)).toBeVisible();
-  // Whole-sentence fix, not just word by word.
-  await expect(bubble.getByTestId("correction")).toContainText("Better: I feel comfortable talking about my work.");
-  await expect(bubble.getByTestId("correction")).toContainText("Drop 'I think'");
+  // Whole-sentence fix, not just word by word: a chip that opens a sheet.
+  await bubble.getByTestId("correction-chip").click();
+  const fix = page.getByTestId("correction-sheet");
+  await expect(fix).toContainText("I think I feel comfortable talking about my work.");
+  await expect(fix).toContainText("I feel comfortable talking about my work.");
+  await expect(fix).toContainText("Drop 'I think'");
+  await page.waitForTimeout(600); // let the video show the sheet
+  await fix.getByRole("button", { name: "Done" }).click();
+  await expect(fix).toBeHidden();
 
   await bubble.getByRole("button", { name: /comfortable/ }).click();
   const sheet = page.getByTestId("word-sheet");
