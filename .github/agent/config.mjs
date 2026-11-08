@@ -38,8 +38,32 @@ export function readConfig(env = process.env) {
   const max = parseInt(env.AGENT_MAX_FIX_ATTEMPTS ?? "", 10);
   return {
     maxFixAttempts: Number.isFinite(max) && max > 0 ? max : 3,
+    // Only ever merges PRs the reviewer rated high confidence; see decide.mjs.
     autoMerge: String(env.AGENT_AUTO_MERGE ?? "").toLowerCase() === "true",
   };
+}
+
+/**
+ * The review comment carries a hidden line the Agent workflow reads later to
+ * decide whether it may merge on its own:
+ *   <!-- agent:review-meta {"sha":"…","eligible":true,"why":"…"} -->
+ * `sha` pins it to the reviewed commit, so a later push can't inherit it.
+ */
+const META_RE = /<!-- agent:review-meta (\{.*?\}) -->/;
+export function formatReviewMeta(meta) {
+  const safe = { ...meta, why: String(meta.why ?? "").replace(/-->|<!--/g, "").slice(0, 300) };
+  return `<!-- agent:review-meta ${JSON.stringify(safe)} -->`;
+}
+export function readReviewMeta(comments = []) {
+  // Only the review job's own account counts: the coding agent (claude[bot]) must never be able to vouch for itself.
+  const review = comments.find((c) => c.author === "github-actions[bot]" && c.body.startsWith(MARK.review));
+  const m = review?.body.match(META_RE);
+  if (!m) return null;
+  try {
+    return JSON.parse(m[1]);
+  } catch {
+    return null;
+  }
 }
 
 export const issueFromBranch = (ref) => {

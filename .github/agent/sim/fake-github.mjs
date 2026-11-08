@@ -1,3 +1,5 @@
+import { issueFromBranch } from "../config.mjs";
+
 /**
  * In-memory GitHub with the same methods as ../github.mjs. Records every
  * write so scenarios can assert on comments, labels and statuses.
@@ -11,7 +13,8 @@ export class FakeGitHub {
     this.nextCommentId = 1;
     this.statuses = [];
     this.reruns = [];
-    this.autoMerge = new Set();
+    this.apiMerges = []; // PRs merged by the pipeline through the API
+    this.mergeRefusal = null; // set to a message to make merges fail, like GitHub would
     this.labelsCreated = false;
   }
 
@@ -95,15 +98,29 @@ export class FakeGitHub {
       if (c) c.body = body;
     }
   }
-  async setStatus(sha, { state, context, description }) {
-    this.statuses.push({ sha, state, context, description });
+  async setStatus(sha, { state, context, description, url }) {
+    this.statuses.push({ sha, state, context, description, url });
+  }
+  async findPrByStatus(context, url) {
+    for (const p of this.items.values()) {
+      if (!p.isPr || p.state !== "open") continue;
+      if (this.statuses.some((s) => s.sha === p.headSha && s.context === context && s.url === url)) return { number: p.number, sha: p.headSha, headRef: p.headRef };
+    }
+    return null;
   }
   async rerunFailedJobs(runId) {
     this.reruns.push(runId);
   }
-  async enableAutoMerge(pr) {
-    if (this.autoMergeDisabled) throw new Error("Auto merge is not allowed for this repository");
-    this.autoMerge.add(pr);
+  /** Like PUT /pulls/:n/merge. Fires no workflow events: merges made with the Actions token don't. */
+  async mergePull(pr, sha) {
+    const p = this.items.get(pr);
+    if (this.mergeRefusal) throw new Error(`PUT /pulls/${pr}/merge -> 405 {"message":"${this.mergeRefusal}"}`);
+    if (p.state !== "open") throw new Error(`PUT /pulls/${pr}/merge -> 405 {"message":"Pull Request is not open"}`);
+    if (sha && p.headSha !== sha) throw new Error(`PUT /pulls/${pr}/merge -> 409 {"message":"Head branch was modified. Review and try the merge again."}`);
+    this.close(pr, { merged: true });
+    this.apiMerges.push(pr);
+    const issue = issueFromBranch(p.headRef);
+    if (issue && this.items.get(issue)?.state === "open") this.close(issue); // "Closes #N"
   }
   async listOpenIssuesWithLabel(label) {
     return [...this.items.values()]

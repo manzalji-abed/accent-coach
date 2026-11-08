@@ -13,6 +13,13 @@ const PR_OK = { status: "pr_opened", summary: "Added the dark-mode toggle with a
 const ASK = (...questions) => ({ status: "needs_input", summary: "Need decisions first.", questions });
 const PUSHED = { status: "pushed", summary: "Fixed the failing assertion in the toggle test." };
 const APPROVE = { verdict: "approve", summary: "No security issues.", findings: [] };
+const CONFIDENT = {
+  verdict: "approve",
+  summary: "Small copy change with no security impact.",
+  confidence: "high",
+  confidence_reason: "One-line copy change, covered by a UI test, no shared code touched.",
+  findings: [{ severity: "low", file: "app/page.tsx", line: 4, issue: "Wording could be shorter", fix: "Say 'Start lesson'" }],
+};
 const CHANGES = {
   verdict: "request_changes",
   summary: "The new API route has no size limit.",
@@ -45,28 +52,106 @@ export const SCENARIOS = [
     },
   },
   {
-    name: "Auto-merge on: green PR merges itself",
+    name: "Review results arrive the way GitHub sends them (on main, no PR attached) and still reach the right PR",
     async run() {
-      const sim = new PipelineSim({ env: { AGENT_AUTO_MERGE: "true" }, script: { build: [PR_OK] } });
-      const i = sim.newIssue("Tweak copy");
-      sim.addLabel(i, LABELS.trigger);
+      // Two agent PRs in flight: one approved, one sent back for changes.
+      const sim = new PipelineSim({ script: { build: [PR_OK, PR_OK], review: [APPROVE, CHANGES, APPROVE], fix: [PUSHED] } });
+      const a = sim.newIssue("Add dark mode toggle");
+      const b = sim.newIssue("New upload endpoint");
+      sim.addLabel(a, LABELS.trigger);
+      sim.addLabel(b, LABELS.trigger);
       await sim.settle();
-      assert.equal(sim.gh.items.get(sim.agentPr(i)).merged, true);
-      assert.equal(sim.gh.items.get(i).state, "closed");
+      const [prA, prB] = [sim.agentPr(a), sim.agentPr(b)];
+      assert.match(lastBot(sim, prA), /Ready for you to merge/);
+      assert.deepEqual(sim.prompts.filter((p) => p.kind === "fix").map((p) => [p.pr, p.cause]), [[prB, "review"]], "only B gets the review fix");
+      assert.match(lastBot(sim, prB), /Ready for you to merge/, "B is ready after its fix is approved");
       return sim;
     },
   },
   {
-    name: "Auto-merge on but disabled in repo settings: explains instead of failing silently",
+    name: "Auto-merge on, high confidence: the pipeline merges it, closes the issue and tidies up",
     async run() {
-      const sim = new PipelineSim({ env: { AGENT_AUTO_MERGE: "true" }, script: { build: [PR_OK] } });
-      sim.gh.autoMergeDisabled = true;
+      const sim = new PipelineSim({ env: { AGENT_AUTO_MERGE: "true" }, script: { build: [PR_OK], review: [CONFIDENT] } });
+      const i = sim.newIssue("Tweak copy");
+      sim.addLabel(i, LABELS.trigger);
+      await sim.settle();
+      const pr = sim.agentPr(i);
+      assert.deepEqual(sim.gh.apiMerges, [pr], "merged by the pipeline, low findings allowed");
+      assert.equal(sim.gh.items.get(i).state, "closed");
+      assert.deepEqual(sim.labels(i), [LABELS.trigger]);
+      assert.match(sim.status(i), /shipped in #/);
+      return sim;
+    },
+  },
+  {
+    name: "Auto-merge on, reviewer only medium-confident: waits for you and says why",
+    async run() {
+      const medium = { ...CONFIDENT, confidence: "medium", confidence_reason: "It changes a shared style also used on the Shadowing screen." };
+      const sim = new PipelineSim({ env: { AGENT_AUTO_MERGE: "true" }, script: { build: [PR_OK], review: [medium] } });
+      const i = sim.newIssue("Add a Slow button");
+      sim.addLabel(i, LABELS.trigger);
+      await sim.settle();
+      const pr = sim.agentPr(i);
+      assert.equal(sim.gh.items.get(pr).merged, false);
+      assert.match(lastBot(sim, pr), /Ready for you to merge/);
+      assert.match(lastBot(sim, pr), /Not merged automatically: the reviewer's confidence is medium \(It changes a shared style/);
+      assert.match(sim.status(i), /Not merged automatically/);
+      return sim;
+    },
+  },
+  {
+    name: "Auto-merge on, rated high but with a medium-severity finding: waits (enforced in code, not left to the model)",
+    async run() {
+      const finding = { severity: "medium", file: "components/WordSheet.tsx", issue: "No error state when playback fails", fix: "Show a retry message" };
+      const sim = new PipelineSim({ env: { AGENT_AUTO_MERGE: "true" }, script: { build: [PR_OK], review: [{ ...CONFIDENT, findings: [finding] }] } });
+      const i = sim.newIssue("Add a Slow button");
+      sim.addLabel(i, LABELS.trigger);
+      await sim.settle();
+      const pr = sim.agentPr(i);
+      assert.deepEqual(sim.gh.apiMerges, []);
+      assert.match(lastBot(sim, pr), /1 finding above low severity/);
+      return sim;
+    },
+  },
+  {
+    name: "Auto-merge on, but GitHub refuses the merge (e.g. a conflict): explains and leaves it for you",
+    async run() {
+      const sim = new PipelineSim({ env: { AGENT_AUTO_MERGE: "true" }, script: { build: [PR_OK], review: [CONFIDENT] } });
+      sim.gh.mergeRefusal = "Pull Request is not mergeable";
       const i = sim.newIssue("Tweak copy");
       sim.addLabel(i, LABELS.trigger);
       await sim.settle();
       const pr = sim.agentPr(i);
       assert.equal(sim.gh.items.get(pr).merged, false);
-      assert.match(lastBot(sim, pr), /Allow auto-merge/);
+      assert.match(lastBot(sim, pr), /GitHub refused \(Pull Request is not mergeable\)/);
+      assert.match(sim.status(i), /Ready for you to merge/);
+      has(sim.labels(i), LABELS.inReview);
+      return sim;
+    },
+  },
+  {
+    name: "Auto-merge on, a new commit lands while the review runs: the unreviewed commit is never merged",
+    async run() {
+      const pushDuringReview = ({ gh, pr }) => (gh.pushCommit(pr), structuredClone(CONFIDENT));
+      const sim = new PipelineSim({ env: { AGENT_AUTO_MERGE: "true" }, script: { build: [PR_OK], review: [pushDuringReview] } });
+      const i = sim.newIssue("Tweak copy");
+      sim.addLabel(i, LABELS.trigger);
+      await sim.settle();
+      assert.deepEqual(sim.gh.apiMerges, []);
+      assert.match(sim.log.at(-1), /no open PR for this run/);
+      return sim;
+    },
+  },
+  {
+    name: "Auto-merge off: even a high-confidence PR waits for you",
+    async run() {
+      const sim = new PipelineSim({ script: { build: [PR_OK], review: [CONFIDENT] } });
+      const i = sim.newIssue("Tweak copy");
+      sim.addLabel(i, LABELS.trigger);
+      await sim.settle();
+      const pr = sim.agentPr(i);
+      assert.deepEqual(sim.gh.apiMerges, []);
+      assert.match(lastBot(sim, pr), /Ready for you to merge\.$/, "no 'not merged automatically' note when you turned it off");
       return sim;
     },
   },
@@ -523,6 +608,18 @@ export const SCENARIOS = [
       sim.merge(sim.agentPr(a));
       await sim.settle();
       assert.ok(sim.agentPr(b));
+      return sim;
+    },
+  },
+  {
+    name: "PLAN.md + auto-merge: confident items ship one after another with no clicks",
+    async run() {
+      const sim = new PipelineSim({ env: { AGENT_AUTO_MERGE: "true" }, script: { build: [PR_OK, PR_OK], review: [CONFIDENT, CONFIDENT] } });
+      await syncPlan(sim.gh, "- [ ] Add dark mode\n- [ ] Add streak freeze\n", () => {});
+      await sim.settle();
+      const issues = [...sim.gh.items.values()].filter((it) => !it.isPr).map((it) => it.number);
+      assert.equal(sim.gh.apiMerges.length, 2, "both PRs merged by the pipeline");
+      assert.ok(issues.every((n) => sim.gh.items.get(n).state === "closed"), "whole plan shipped");
       return sim;
     },
   },

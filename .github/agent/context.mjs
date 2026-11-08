@@ -1,4 +1,4 @@
-import { BRANCH_PREFIX, MARK, issueFromBranch, readConfig } from "./config.mjs";
+import { BRANCH_PREFIX, MARK, REVIEW_STATUS_CONTEXT, REVIEW_WORKFLOW, issueFromBranch, readConfig } from "./config.mjs";
 
 /**
  * Collects everything decide() needs from the event payload plus a few API
@@ -16,6 +16,7 @@ export async function gatherContext(gh, event, payload, env = process.env) {
     pr: null,
     linkedIssue: null,
     openAgentPr: null,
+    run: null, // workflow_run events: the run, with the PR's branch/commit filled in for Agent Review
     prComments: [],
     actorCanWrite: false,
   };
@@ -39,7 +40,21 @@ export async function gatherContext(gh, event, payload, env = process.env) {
 
   if (event === "workflow_run") {
     const run = payload.workflow_run;
-    const prNumber = run.pull_requests?.[0]?.number ?? (await gh.findOpenPrForBranch(run.head_branch));
+    ctx.run = run;
+    let prNumber = run.pull_requests?.[0]?.number ?? null;
+    if (!prNumber && run.name === REVIEW_WORKFLOW) {
+      // Agent Review is itself started by a workflow_run, so GitHub reports it
+      // on the default branch with no PRs attached. The review marks the PR's
+      // head commit with a status linking back to this run: find the PR by that.
+      // A PR that moved on to a newer commit won't match, which is what we want.
+      const found = await gh.findPrByStatus(REVIEW_STATUS_CONTEXT, run.html_url);
+      if (found) {
+        prNumber = found.number;
+        ctx.run = { ...run, head_branch: found.headRef, head_sha: found.sha };
+      }
+    } else if (!prNumber) {
+      prNumber = await gh.findOpenPrForBranch(run.head_branch);
+    }
     if (prNumber) {
       const pr = await gh.getPull(prNumber);
       if (pr.state === "open") {

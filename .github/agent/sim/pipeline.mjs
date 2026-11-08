@@ -89,7 +89,6 @@ export class PipelineSim {
 
     if (d.action === "build") await this.runBuild(d, runUrl);
     if (d.action === "fix") await this.runFix(d, runUrl);
-    if (d.action === "ready" && d.autoMerge && this.gh.autoMerge.has(d.pr)) this.merge(d.pr);
   }
 
   async runBuild(d, runUrl) {
@@ -139,11 +138,13 @@ export class PipelineSim {
   async runReview({ pr }) {
     const p = await this.gh.getPull(pr);
     if (p.state !== "open") return;
-    const step = this.script.review.shift() ?? { verdict: "approve", summary: "Looks good.", findings: [] };
+    const step = this.script.review.shift() ?? { verdict: "approve", summary: "Looks good.", confidence: "medium", confidence_reason: "Default scripted review.", findings: [] };
     const result = typeof step === "function" ? step({ gh: this.gh, pr }) : structuredClone(step);
-    this.log.push(`Review on #${pr} -> ${result?.verdict ?? "crashed"}`);
-    await execOps(this.gh, planReview(result, { pr, sha: p.headSha, runUrl: "https://github.com/run/review", context: REVIEW_STATUS_CONTEXT }), () => {});
-    this.emit("workflow_run", runPayload(REVIEW_WORKFLOW, result?.verdict === "approve" ? "success" : "failure", p, ++this.runs));
+    this.log.push(`Review on #${pr} -> ${result?.verdict ?? "crashed"}${result?.confidence ? ` (${result.confidence} confidence)` : ""}`);
+    const id = ++this.runs;
+    const runUrl = `https://github.com/run/${id}`;
+    await execOps(this.gh, planReview(result, { pr, sha: p.headSha, runUrl, context: REVIEW_STATUS_CONTEXT }), () => {});
+    this.emit("workflow_run", reviewRunPayload(result?.verdict === "approve" ? "success" : "failure", id, runUrl));
   }
 
   // ---------------- assertions helpers ----------------
@@ -168,7 +169,19 @@ function outcome(r) {
 function runPayload(name, conclusion, pr, id) {
   return {
     action: "completed",
-    workflow_run: { id, name, conclusion, head_branch: pr.headRef, head_sha: pr.headSha, html_url: `https://github.com/run/${id}`, pull_requests: [{ number: pr.number }] },
+    workflow_run: { id, name, event: "pull_request", conclusion, head_branch: pr.headRef, head_sha: pr.headSha, html_url: `https://github.com/run/${id}`, pull_requests: [{ number: pr.number }] },
+  };
+}
+
+/**
+ * What GitHub really sends when Agent Review finishes. That workflow is started
+ * by a workflow_run, so its run is reported on the default branch with no PRs
+ * attached; the pipeline has to find the PR from the review's commit status.
+ */
+function reviewRunPayload(conclusion, id, htmlUrl) {
+  return {
+    action: "completed",
+    workflow_run: { id, name: REVIEW_WORKFLOW, event: "workflow_run", conclusion, head_branch: "main", head_sha: "sha-main", html_url: htmlUrl, pull_requests: [] },
   };
 }
 

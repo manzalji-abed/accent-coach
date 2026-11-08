@@ -14,11 +14,35 @@ me labeled "agent" on #1 -> build:start (agent label added)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
 Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Agent Review success on main -> ready (tests and review passed)
 PR #2 merged -> done (PR merged)
 ```
 
-## 2. Auto-merge on: green PR merges itself
+## 2. Review results arrive the way GitHub sends them (on main, no PR attached) and still reach the right PR
+
+**Result:** passed
+
+```
+me labeled "agent" on #1 -> build:start (agent label added)
+  build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
+me labeled "agent" on #2 -> build:start (agent label added)
+  build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
+CI on #3 -> success
+CI on #4 -> success
+CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
+Review on #3 -> approve
+CI success on agent/issue-2 -> noop (CI passed; Agent Review runs next)
+Review on #4 -> request_changes
+Agent Review success on main -> ready (tests and review passed)
+Agent Review failure on main -> fix:review (Agent Review failed)
+  fix agent -> pushed (Fixed the failing assertion in the toggle test.)
+CI on #4 -> success
+CI success on agent/issue-2 -> noop (CI passed; Agent Review runs next)
+Review on #4 -> approve
+Agent Review success on main -> ready (tests and review passed)
+```
+
+## 3. Auto-merge on, high confidence: the pipeline merges it, closes the issue and tidies up
 
 **Result:** passed
 
@@ -27,12 +51,11 @@ me labeled "agent" on #1 -> build:start (agent label added)
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
-PR #2 merged -> done (PR merged)
+Review on #2 -> approve (high confidence)
+Agent Review success on main -> ready (tests and review passed, high confidence)
 ```
 
-## 3. Auto-merge on but disabled in repo settings: explains instead of failing silently
+## 4. Auto-merge on, reviewer only medium-confident: waits for you and says why
 
 **Result:** passed
 
@@ -41,11 +64,63 @@ me labeled "agent" on #1 -> build:start (agent label added)
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 4. Unclear issue: agent stops and asks; your reply resumes it
+## 5. Auto-merge on, rated high but with a medium-severity finding: waits (enforced in code, not left to the model)
+
+**Result:** passed
+
+```
+me labeled "agent" on #1 -> build:start (agent label added)
+  build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
+CI on #2 -> success
+CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
+Review on #2 -> approve (high confidence)
+Agent Review success on main -> ready (tests and review passed)
+```
+
+## 6. Auto-merge on, but GitHub refuses the merge (e.g. a conflict): explains and leaves it for you
+
+**Result:** passed
+
+```
+me labeled "agent" on #1 -> build:start (agent label added)
+  build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
+CI on #2 -> success
+CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
+Review on #2 -> approve (high confidence)
+Agent Review success on main -> ready (tests and review passed, high confidence)
+```
+
+## 7. Auto-merge on, a new commit lands while the review runs: the unreviewed commit is never merged
+
+**Result:** passed
+
+```
+me labeled "agent" on #1 -> build:start (agent label added)
+  build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
+CI on #2 -> success
+CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
+Review on #2 -> approve (high confidence)
+Agent Review success on main -> noop (no open PR for this run)
+```
+
+## 8. Auto-merge off: even a high-confidence PR waits for you
+
+**Result:** passed
+
+```
+me labeled "agent" on #1 -> build:start (agent label added)
+  build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
+CI on #2 -> success
+CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
+Review on #2 -> approve (high confidence)
+Agent Review success on main -> ready (tests and review passed)
+```
+
+## 9. Unclear issue: agent stops and asks; your reply resumes it
 
 **Result:** passed
 
@@ -56,11 +131,11 @@ me commented on #1: "Midnight, and yes home screen only." -> build:resume (human
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 5. Still unclear after your answer: asks a second round, then builds
+## 10. Still unclear after your answer: asks a second round, then builds
 
 **Result:** passed
 
@@ -73,11 +148,11 @@ me commented on #1: "Bold." -> build:resume (human answered the agent's question
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 6. Tests fail once: agent fixes it and the PR goes green
+## 11. Tests fail once: agent fixes it and the PR goes green
 
 **Result:** passed
 
@@ -89,11 +164,11 @@ CI failure on agent/issue-1 -> fix:ci (CI failed)
   fix agent -> pushed (Fixed the failing assertion in the toggle test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 7. Tests keep failing: 3 attempts, then it stops and asks you; your guidance restarts it
+## 12. Tests keep failing: 3 attempts, then it stops and asks you; your guidance restarts it
 
 **Result:** passed
 
@@ -115,11 +190,11 @@ me commented on #2: "The snapshot test is outdated, update it" -> fix:human (hum
   fix agent -> pushed (Fixed the failing assertion in the toggle test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 8. Your guidance gives it a fresh budget of 3 attempts (your guided fix counts as the first)
+## 13. Your guidance gives it a fresh budget of 3 attempts (your guided fix counts as the first)
 
 **Result:** passed
 
@@ -149,7 +224,7 @@ CI on #2 -> failure
 CI failure on agent/issue-1 -> block:ci (ci still failing after 3 fix attempts)
 ```
 
-## 9. Security review requests changes: agent fixes, review approves
+## 14. Security review requests changes: agent fixes, review approves
 
 **Result:** passed
 
@@ -159,15 +234,15 @@ me labeled "agent" on #1 -> build:start (agent label added)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
 Review on #2 -> request_changes
-Agent Review failure on agent/issue-1 -> fix:review (Agent Review failed)
+Agent Review failure on main -> fix:review (Agent Review failed)
   fix agent -> pushed (Fixed the failing assertion in the toggle test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
 Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 10. Review keeps rejecting: blocked after 3, merge stays impossible
+## 15. Review keeps rejecting: blocked after 3, merge stays impossible
 
 **Result:** passed
 
@@ -177,25 +252,25 @@ me labeled "agent" on #1 -> build:start (agent label added)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
 Review on #2 -> request_changes
-Agent Review failure on agent/issue-1 -> fix:review (Agent Review failed)
+Agent Review failure on main -> fix:review (Agent Review failed)
   fix agent -> pushed (Fixed the failing assertion in the toggle test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
 Review on #2 -> request_changes
-Agent Review failure on agent/issue-1 -> fix:review (Agent Review failed)
+Agent Review failure on main -> fix:review (Agent Review failed)
   fix agent -> pushed (Fixed the failing assertion in the toggle test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
 Review on #2 -> request_changes
-Agent Review failure on agent/issue-1 -> fix:review (Agent Review failed)
+Agent Review failure on main -> fix:review (Agent Review failed)
   fix agent -> pushed (Fixed the failing assertion in the toggle test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
 Review on #2 -> request_changes
-Agent Review failure on agent/issue-1 -> block:review (review still failing after 3 fix attempts)
+Agent Review failure on main -> block:review (review still failing after 3 fix attempts)
 ```
 
-## 11. Fixing needs a product decision: agent asks on the PR, your reply continues
+## 16. Fixing needs a product decision: agent asks on the PR, your reply continues
 
 **Result:** passed
 
@@ -209,11 +284,11 @@ me commented on #2: "3 is right, update the test." -> fix:human (human replied t
   fix agent -> pushed (Fixed the failing assertion in the toggle test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 12. Agent run crashes (no result): marked blocked with a log link; /agent retry recovers
+## 17. Agent run crashes (no result): marked blocked with a log link; /agent retry recovers
 
 **Result:** passed
 
@@ -224,11 +299,11 @@ me commented on #1: "/agent retry" -> build:resume (/agent retry)
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 13. Agent says it can't do it: explains; more detail from you restarts it
+## 18. Agent says it can't do it: explains; more detail from you restarts it
 
 **Result:** passed
 
@@ -239,11 +314,11 @@ me commented on #1: "Use Stripe test mode with a fake key for" -> build:resume (
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 14. Agent fix produces no change on a failing run: still counted, can't loop forever
+## 19. Agent fix produces no change on a failing run: still counted, can't loop forever
 
 **Result:** passed
 
@@ -263,7 +338,7 @@ CI on #2 -> failure
 CI failure on agent/issue-1 -> block:ci (ci still failing after 3 fix attempts)
 ```
 
-## 15. /agent stop mid-way clears everything; /agent retry continues on the same PR
+## 20. /agent stop mid-way clears everything; /agent retry continues on the same PR
 
 **Result:** passed
 
@@ -279,11 +354,11 @@ me commented on #1: "/agent retry keep the old API" -> fix:human (guidance on is
   fix agent -> pushed (Fixed the failing assertion in the toggle test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 16. Removing the agent label stops it
+## 21. Removing the agent label stops it
 
 **Result:** passed
 
@@ -294,7 +369,7 @@ me unlabeled "agent" on #1 -> stop (agent label removed)
 me commented on #1: "Blue." -> noop (ordinary issue discussion)
 ```
 
-## 17. Strangers can't drive the agent (no write access)
+## 22. Strangers can't drive the agent (no write access)
 
 **Result:** passed
 
@@ -307,11 +382,11 @@ me commented on #1: "Green." -> build:resume (human answered the agent's questio
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 18. A stranger adding the label does nothing
+## 23. A stranger adding the label does nothing
 
 **Result:** passed
 
@@ -319,7 +394,7 @@ Agent Review success on agent/issue-1 -> ready (tests and review passed)
 random-person labeled "agent" on #1 -> noop (random-person does not have write access)
 ```
 
-## 19. Bots and the pipeline's own comments never trigger it (no loops)
+## 24. Bots and the pipeline's own comments never trigger it (no loops)
 
 **Result:** passed
 
@@ -330,7 +405,7 @@ dependabot[bot] commented on #1: "/agent retry" -> noop (comment from a bot)
 me commented on #1: "<!-- agent:status --> echo" -> noop (comment written by the pipeline)
 ```
 
-## 20. Label added twice or while running: no duplicate runs
+## 25. Label added twice or while running: no duplicate runs
 
 **Result:** passed
 
@@ -339,13 +414,13 @@ me labeled "agent" on #1 -> build:start (agent label added)
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 me labeled "agent" on #1 -> noop (PR #2 is already open for this issue)
 me labeled "agent" on #3 -> noop (a run is already in progress)
 ```
 
-## 21. No Claude credentials yet: one clear setup comment; retry after adding them works
+## 26. No Claude credentials yet: one clear setup comment; retry after adding them works
 
 **Result:** passed
 
@@ -356,11 +431,11 @@ me commented on #1: "/agent retry" -> build:resume (/agent retry)
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 22. You close the PR without merging: labels cleared; /agent retry starts fresh
+## 27. You close the PR without merging: labels cleared; /agent retry starts fresh
 
 **Result:** passed
 
@@ -369,18 +444,18 @@ me labeled "agent" on #1 -> build:start (agent label added)
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 PR #2 closed -> done (PR closed without merging)
 me commented on #1: "/agent retry, smaller this time" -> build:resume (/agent retry)
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #3 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #3 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #3 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 23. Your own (human) PR: reviewed, but the agent never pushes to it
+## 28. Your own (human) PR: reviewed, but the agent never pushes to it
 
 **Result:** passed
 
@@ -389,7 +464,7 @@ CI on #1 -> failure
 CI failure on feature/my-thing -> noop (human PR failed; the agent leaves those alone)
 ```
 
-## 24. Old CI result arriving after a newer push is ignored
+## 29. Old CI result arriving after a newer push is ignored
 
 **Result:** passed
 
@@ -398,12 +473,12 @@ me labeled "agent" on #1 -> build:start (agent label added)
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 CI failure on agent/issue-1 -> noop (stale run: the PR has newer commits)
 ```
 
-## 25. PR from a fork never gets agent fixes
+## 30. PR from a fork never gets agent fixes
 
 **Result:** passed
 
@@ -412,7 +487,7 @@ CI on #1 -> failure
 CI failure on agent/issue-1 -> noop (PR from a fork)
 ```
 
-## 26. Asking for a change on an open, green PR with /agent
+## 31. Asking for a change on an open, green PR with /agent
 
 **Result:** passed
 
@@ -421,18 +496,18 @@ me labeled "agent" on #1 -> build:start (agent label added)
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 me commented on #2: "Looks nice. Just a normal comment." -> noop (ordinary PR discussion)
 me commented on #2: "/agent rename the button to 'Save change" -> fix:human (/agent command on PR)
   fix agent -> pushed (Renamed the button to Save changes.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 27. Vague guidance on a PR: agent asks what you meant instead of guessing
+## 32. Vague guidance on a PR: agent asks what you meant instead of guessing
 
 **Result:** passed
 
@@ -441,13 +516,13 @@ me labeled "agent" on #1 -> build:start (agent label added)
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 me commented on #2: "/agent make it better" -> fix:human (/agent command on PR)
   fix agent -> no_change (Not sure which part to change.)
 ```
 
-## 28. Noise check: a full happy path posts at most 3 notifying comments
+## 33. Noise check: a full happy path posts at most 3 notifying comments
 
 **Result:** passed
 
@@ -456,11 +531,11 @@ me labeled "agent" on #1 -> build:start (agent label added)
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #2 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #2 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #2 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 29. PLAN.md: items become issues and run one at a time, each starting when the previous merges
+## 34. PLAN.md: items become issues and run one at a time, each starting when the previous merges
 
 **Result:** passed
 
@@ -469,26 +544,26 @@ pipeline dispatched agent-start for #1 -> build:start (next item in PLAN.md)
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #4 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #4 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #4 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 PR #4 merged -> done (PR merged)
 pipeline dispatched agent-start for #2 -> build:start (next item in PLAN.md)
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #5 -> success
 CI success on agent/issue-2 -> noop (CI passed; Agent Review runs next)
-Review on #5 -> approve
-Agent Review success on agent/issue-2 -> ready (tests and review passed)
+Review on #5 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 PR #5 merged -> done (PR merged)
 pipeline dispatched agent-start for #3 -> build:start (next item in PLAN.md)
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #6 -> success
 CI success on agent/issue-3 -> noop (CI passed; Agent Review runs next)
-Review on #6 -> approve
-Agent Review success on agent/issue-3 -> ready (tests and review passed)
+Review on #6 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 PR #6 merged -> done (PR merged)
 ```
 
-## 30. PLAN.md: a blocked item pauses the queue until it's resolved
+## 35. PLAN.md: a blocked item pauses the queue until it's resolved
 
 **Result:** passed
 
@@ -499,17 +574,36 @@ me commented on #1: "Resend." -> build:resume (human answered the agent's questi
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #3 -> success
 CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
-Review on #3 -> approve
-Agent Review success on agent/issue-1 -> ready (tests and review passed)
+Review on #3 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 PR #3 merged -> done (PR merged)
 pipeline dispatched agent-start for #2 -> build:start (next item in PLAN.md)
   build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
 CI on #4 -> success
 CI success on agent/issue-2 -> noop (CI passed; Agent Review runs next)
-Review on #4 -> approve
-Agent Review success on agent/issue-2 -> ready (tests and review passed)
+Review on #4 -> approve (medium confidence)
+Agent Review success on main -> ready (tests and review passed)
 ```
 
-## 31. PLAN.md parsing handles details, checked items and existing issue refs
+## 36. PLAN.md + auto-merge: confident items ship one after another with no clicks
+
+**Result:** passed
+
+```
+pipeline dispatched agent-start for #1 -> build:start (next item in PLAN.md)
+  build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
+CI on #3 -> success
+CI success on agent/issue-1 -> noop (CI passed; Agent Review runs next)
+Review on #3 -> approve (high confidence)
+Agent Review success on main -> ready (tests and review passed, high confidence)
+pipeline dispatched agent-start for #2 -> build:start (next item in PLAN.md)
+  build agent -> pr_opened (Added the dark-mode toggle with a unit and UI test.)
+CI on #4 -> success
+CI success on agent/issue-2 -> noop (CI passed; Agent Review runs next)
+Review on #4 -> approve (high confidence)
+Agent Review success on main -> ready (tests and review passed, high confidence)
+```
+
+## 37. PLAN.md parsing handles details, checked items and existing issue refs
 
 **Result:** passed

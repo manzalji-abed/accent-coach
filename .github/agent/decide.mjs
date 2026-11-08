@@ -1,4 +1,4 @@
-import { CI_WORKFLOW, LABELS, MARK, REVIEW_WORKFLOW, issueFromBranch } from "./config.mjs";
+import { CI_WORKFLOW, LABELS, MARK, REVIEW_WORKFLOW, issueFromBranch, readReviewMeta } from "./config.mjs";
 
 /**
  * The whole pipeline's decision logic as one pure function.
@@ -10,7 +10,8 @@ import { CI_WORKFLOW, LABELS, MARK, REVIEW_WORKFLOW, issueFromBranch } from "./c
  *   fix      push fixes to an open agent PR; details.cause = "ci" | "review" | "human"
  *   block    stop retrying and ask a human for help
  *   stop     a human said stop: clear agent labels
- *   ready    tests and review passed: tell the human (or auto-merge)
+ *   ready    tests and review passed: tell the human, or merge if auto-merge
+ *            is on and the reviewer rated this exact commit high confidence
  *   done     PR merged or closed: tidy labels
  *   setup    the repo is missing a required secret: explain once
  *   noop     nothing to do (reason says why, for the logs)
@@ -94,7 +95,7 @@ export function decide(ctx) {
 
   // ---------------------------------------------------------- workflow runs
   function onWorkflowRun(ctx, noop) {
-    const run = payload.workflow_run;
+    const run = ctx.run ?? payload.workflow_run;
     if (payload.action !== "completed") return noop("run not finished");
     const issueNumber = issueFromBranch(run.head_branch);
     const isAgentBranch = issueNumber !== null;
@@ -106,7 +107,14 @@ export function decide(ctx) {
 
     if (run.conclusion === "success") {
       if (run.name === CI_WORKFLOW) return noop("CI passed; Agent Review runs next");
-      if (run.name === REVIEW_WORKFLOW) return { action: "ready", reason: "tests and review passed", issue: issueNumber, pr: ctx.pr.number, autoMerge: isAgentBranch && ctx.config.autoMerge };
+      if (run.name === REVIEW_WORKFLOW) {
+        const ready = { action: "ready", reason: "tests and review passed", issue: issueNumber, pr: ctx.pr.number, headSha: run.head_sha, autoMerge: false };
+        if (!isAgentBranch || !ctx.config.autoMerge) return ready;
+        // Auto-merge only what the reviewer rated high confidence, for this exact commit.
+        const meta = readReviewMeta(ctx.prComments);
+        if (meta?.eligible === true && meta.sha === run.head_sha) return { ...ready, reason: "tests and review passed, high confidence", autoMerge: true };
+        return { ...ready, manualReason: meta?.why || "the review didn't rate it high confidence" };
+      }
       return noop(`ignoring ${run.name}`);
     }
 

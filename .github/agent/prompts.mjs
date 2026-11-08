@@ -27,6 +27,8 @@ export const REVIEW_SCHEMA = {
   properties: {
     verdict: { type: "string", enum: ["approve", "request_changes"] },
     summary: { type: "string" },
+    confidence: { type: "string", enum: ["high", "medium", "low"] },
+    confidence_reason: { type: "string" },
     findings: {
       type: "array",
       items: {
@@ -42,7 +44,7 @@ export const REVIEW_SCHEMA = {
       },
     },
   },
-  required: ["verdict", "summary", "findings"],
+  required: ["verdict", "summary", "confidence", "confidence_reason", "findings"],
 };
 
 const CHECKS = "npm run typecheck && npm test && npm run build";
@@ -110,5 +112,12 @@ Check, in order of importance:
 Verdict rules:
 - "request_changes" only for critical/high security issues, real bugs, or missing tests for new logic.
 - Style and nice-to-haves are "low" findings and still "approve".
+
+Confidence: a "high" PR may be merged with no human looking at it, so rate honestly and pick "medium" when in doubt.
+- "high" only if ALL hold: the change is small and focused; it does what the linked issue asks and nothing more; it does not touch API routes, lib/ai (prompts, schemas, guards, the Gemini client), how data is stored (lib/store.ts), dependencies, or config/build/deploy files; visible changes have a Playwright test; and it has no side effects on other screens or shared components that a human should see.
+- "medium": probably fine, but a human should glance at it (a shared style or component changed, the issue was ambiguous, or a low finding is worth a look).
+- "low": you are not sure it is correct or complete.
+confidence_reason is one sentence saying why.
+
 Keep the summary to 2 sentences. Each finding names the file, the problem, and the concrete fix.`;
 }
