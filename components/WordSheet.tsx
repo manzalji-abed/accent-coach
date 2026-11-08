@@ -5,6 +5,8 @@ import { speak } from "@/lib/speech";
 import type { Accent, WordFlag } from "@/lib/types";
 import { SpeakerIcon } from "./icons";
 
+const SLOW_RATE = 0.6;
+
 /** The "Said vs. Expected" card, as a bottom sheet so it's reachable one-handed. */
 export function WordSheet(props: { flag: WordFlag; accent: Accent; clipUrl?: string; onClose: () => void }) {
   const { flag, accent, clipUrl, onClose } = props;
@@ -63,6 +65,9 @@ export function WordSheet(props: { flag: WordFlag; accent: Accent; clipUrl?: str
           </button>
           <button type="button" className="btn" onClick={() => speak(flag.word, accent, { rate: 0.8 })}>
             <SpeakerIcon size={20} /> Play native
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={() => speak(flag.word, accent, { rate: SLOW_RATE })}>
+            Slow
           </button>
         </div>
         {!clipUrl && <p className="lede" style={{ marginTop: 10, fontSize: "0.85rem" }}>Your recording is only kept until you leave this session.</p>}

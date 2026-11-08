@@ -41,6 +41,21 @@ test("finishing without speaking saves nothing", async ({ page }) => {
   await expect(page.getByTestId("streak")).toContainText("0");
 });
 
+test("Slow button plays the native sample at 0.6x", async ({ page }) => {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __rates: number[] };
+    w.__rates = [];
+    window.speechSynthesis.speak = (u: SpeechSynthesisUtterance) => void w.__rates.push(u.rate);
+  });
+  await onboard(page);
+  await page.getByRole("link", { name: /Free talk/ }).click();
+  await speakTurn(page);
+  await page.getByTestId("user-bubble").first().getByRole("button", { name: /comfortable/ }).click();
+  await page.getByTestId("word-sheet").getByRole("button", { name: "Slow" }).click();
+  const rates = await page.evaluate(() => (window as unknown as { __rates: number[] }).__rates);
+  expect(rates.at(-1)).toBeCloseTo(0.6, 5);
+});
+
 test("role-play opens in character", async ({ page }) => {
   await onboard(page, "Travel");
   await page.getByRole("link", { name: /Customs officer|Hotel check-in|Ordering dinner/ }).first().click();
