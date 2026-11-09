@@ -97,8 +97,10 @@ function Talk({ app, earlier, scenarioParam }: { app: AppState; earlier: Session
 
   // Keep a copy saved as we go, so a refresh doesn't lose the conversation.
   useEffect(() => {
-    if (session.turns.some((t) => t.role === "user")) saveSession(session, { finished: Boolean(session.endedAt) });
-  }, [session]);
+    // A reopened conversation stays saved as finished until the learner says something new.
+    const earlierIds = new Set(earlier?.turns.map((t) => t.id));
+    if (session.turns.some((t) => t.role === "user" && !earlierIds.has(t.id))) saveSession(session, { finished: Boolean(session.endedAt) });
+  }, [session, earlier]);
 
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });

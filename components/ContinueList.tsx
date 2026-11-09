@@ -12,7 +12,7 @@ export function ContinueList({ sessions, limit = 3 }: { sessions: Session[]; lim
       <h2 className="section-title" id="continue-title">
         Pick up where you left off
       </h2>
-      <ul className="scenario-list">
+      <ul className="scenario-list continue-list">
         {recent.map((s) => (
           <li key={s.id}>
             <Link href={`/talk?resume=${encodeURIComponent(s.id)}`} data-testid="continue-link" aria-label={`Continue ${scenarioById(s.scenarioId)?.title ?? "conversation"}`}>

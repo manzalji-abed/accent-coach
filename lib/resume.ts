@@ -14,6 +14,8 @@ export function recentResumable(sessions: Session[], limit = 3): Session[] {
 /** The session as it is when picked back up: same id and turns, open again, takeaway to be rewritten. */
 export function reopen(s: Session): Session {
   const copy: Session = { ...s };
+  // Sessions finished before filing was tracked have had all their turns filed.
+  if (s.endedAt && !s.filedTurnIds) copy.filedTurnIds = s.turns.filter((t) => t.role === "user").map((t) => t.id);
   delete copy.endedAt;
   delete copy.takeaway;
   return copy;

@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { findResumable, recentResumable, reopen } from "@/lib/resume";
-import type { Session } from "@/lib/types";
+import { saveSession } from "@/lib/store";
+import type { Session, WordFlag } from "@/lib/types";
+
+const slip = (word: string): WordFlag => ({ word, said: "x", expected: "Y", expectedIpa: "/y/", phoneme: "/θ/", tip: "tip" });
 
 const make = (id: string, opts: Partial<Session> = {}): Session => ({
   id,
@@ -42,5 +45,30 @@ describe("continuing a conversation", () => {
     expect(open.endedAt).toBeUndefined();
     expect(open.takeaway).toBeUndefined();
     expect(a.endedAt).toBeDefined();
+  });
+
+  it("files only the new turns' slips when a continued conversation is finished again", () => {
+    const written: Record<string, string> = {};
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem: (k: string, v: string) => void (written[k] = v) });
+    const stored = () => JSON.parse(written["accent-coach:v1"]) as { sessions: Session[]; trouble: { word: string; misses: number }[] };
+    const first = make("trouble", {
+      endedAt: "2026-11-08T12:05:00.000Z",
+      turns: [
+        { id: "c", role: "coach", text: "Hi!" },
+        { id: "u1", role: "user", text: "think", flags: [slip("think")] },
+      ],
+    });
+    saveSession(first, { finished: true });
+    // The takeaway arrives: saved again, still counted once.
+    saveSession({ ...first, takeaway: { takeaway: "t", focus: "f" } }, { finished: true });
+    expect(stored().trouble).toMatchObject([{ word: "think", misses: 1 }]);
+
+    const reopened = reopen(stored().sessions[0]);
+    const more: Session = { ...reopened, turns: [...reopened.turns, { id: "u2", role: "user", text: "think thing", flags: [slip("think"), slip("thing")] }] };
+    saveSession(more, { finished: false });
+    saveSession({ ...more, endedAt: "2026-11-08T13:00:00.000Z" }, { finished: true });
+
+    expect(Object.fromEntries(stored().trouble.map((w) => [w.word, w.misses]))).toEqual({ think: 2, thing: 1 });
+    vi.unstubAllGlobals();
   });
 });
