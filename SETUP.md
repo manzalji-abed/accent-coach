@@ -22,7 +22,7 @@ git status          # this folder is already a git repo with history and no remo
 2. How should the agent pay for Claude?
    - **Claude Pro/Max subscription** (recommended for one person): secret `CLAUDE_CODE_OAUTH_TOKEN`. Runs count toward their plan's usage limits.
    - **API key** (pay per use): secret `ANTHROPIC_API_KEY`.
-3. Auto-merge when tests pass and the reviewer rates the PR high confidence? Lower-confidence PRs always wait for the user. Recommend **no** for the first couple of weeks.
+3. Auto-merge when tests pass and the reviewer approves with high or medium confidence? Low-confidence PRs, and PRs touching the input guards, Gemini client, dependencies, config or `.github/`, always wait for the user. Recommend **no** for the first couple of weeks.
 
 ## 2. Sanity check locally
 

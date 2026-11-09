@@ -51,7 +51,7 @@ The default model is `gemini-3.8-flash`. Override it with `GEMINI_MODEL`. Live v
    - Require status checks: `Typecheck, unit tests, build`, `UI tests (Playwright)`, `agent/security-review`
      (they appear in the list after the first PR has run)
 5. **Optional, auto-merge:** Settings → Secrets and variables → Actions → **Variables** → `AGENT_AUTO_MERGE` = `true`.
-   The pipeline then merges a PR itself only when tests pass, the security review approves with nothing above low severity, and the reviewer rates it **high confidence**: small, matches the issue, tested, and stays out of API routes, `lib/ai`, storage, dependencies and config. Everything else waits for you, with the reason on the PR. This works on any GitHub plan.
+   The pipeline then merges a PR itself only when tests pass, the security review approves with nothing above low severity, and the reviewer rates it **high or medium confidence**. A PR waits for you, with the reason on the PR, when the reviewer rates it low (unsure, or a decision a human should make, such as risk to saved data, key/auth/rate-limit handling or a new third party), or when it touches `lib/ai/guard.ts`, `lib/ai/gemini.ts`, dependencies, build/deploy config, `.github/` or secrets. This works on any GitHub plan.
 6. **Optional, full HTML test reports:** Settings → Pages → Deploy from branch → `test-media` / root.
    (Appears after the first PR. Pages on private repos needs a paid plan; without it, the comment links to the run instead.)
 
@@ -78,7 +78,7 @@ Each issue gets **one** status comment that edits itself. You're only notified w
 | Variable | Default | |
 |---|---|---|
 | `AGENT_MAX_FIX_ATTEMPTS` | `3` | Automatic fix tries before it stops and asks you |
-| `AGENT_AUTO_MERGE` | `false` | Merge automatically when tests and review pass **and** the reviewer rates the PR high confidence |
+| `AGENT_AUTO_MERGE` | `false` | Merge automatically when tests and review pass **and** the reviewer rates the PR high or medium confidence (never for the guard, Gemini client, dependencies, config or pipeline files) |
 
 ### Safety
 

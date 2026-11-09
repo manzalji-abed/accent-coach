@@ -42,4 +42,5 @@ Run `npx playwright test` whenever you touch anything under `app/` or `component
 - **Tests:** new logic gets a unit test; any visible change gets a Playwright test. Use `data-testid` for things tests need to find. Never weaken or delete a test to make it pass.
 - **Design:** use the CSS tokens in `app/globals.css` (`--voice` for primary actions and the learner, `--slip` for mispronounced, `--clear` for good). Mobile first; check 390px wide. Respect `prefers-reduced-motion`. Keep the mic button the one bold element on talk screens.
 - **Copy:** sentence case, plain verbs, say what happens ("Start lesson", not "Submit"). Errors say what went wrong and what to do next.
+- **Merging:** most agent PRs merge and deploy with no human looking, once tests pass and the security review approves with high or medium confidence. Ship each PR complete and tested. PRs touching `lib/ai/guard.ts`, `lib/ai/gemini.ts`, dependencies, config or `.github/` always wait for the owner.
 - Do not edit `.github/`, `.env*`, or anything with secrets. Do not add dependencies unless the issue needs them.
