@@ -70,12 +70,18 @@ export function saveSession(session: Session, opts: { finished?: boolean } = {})
   const previous = current.sessions.find((s) => s.id === session.id);
   const sessions = [session, ...current.sessions.filter((s) => s.id !== session.id)].slice(0, 200);
   let trouble = current.trouble;
-  // File flags only the first time a session is saved as finished; later saves
-  // (e.g. when the takeaway arrives) must not count the same slips again.
-  if (opts.finished && !previous?.endedAt) {
-    const flags = session.turns.flatMap((t) => (t.role === "user" ? (t.flags ?? []) : []));
-    trouble = mergeTroubleWords(trouble, flags, new Date(session.endedAt ?? Date.now()));
+  // File each user turn's flags once. Later saves (e.g. when the takeaway arrives) and
+  // finishing a continued conversation again must not count earlier slips twice.
+  let filed = session.filedTurnIds ?? previous?.filedTurnIds;
+  const userIds = session.turns.filter((t) => t.role === "user").map((t) => t.id);
+  if (opts.finished) {
+    // A session already stored as finished (before filing was tracked) has had everything filed.
+    const done = new Set(filed ?? (previous?.endedAt ? userIds : []));
+    const flags = session.turns.flatMap((t) => (t.role === "user" && !done.has(t.id) ? (t.flags ?? []) : []));
+    if (flags.length) trouble = mergeTroubleWords(trouble, flags, new Date(session.endedAt ?? Date.now()));
+    filed = userIds;
   }
+  sessions[0] = filed ? { ...session, filedTurnIds: filed } : session;
   commit({ ...current, sessions, trouble });
 }
 

@@ -82,6 +82,8 @@ export function useLiveCoach(opts: {
   openerId: string;
   /** Latest turns, so a restart can tell the coach what was already said. */
   turns: () => Turn[];
+  /** Continuing an earlier conversation: give the coach the history and skip the greeting. */
+  resume?: boolean;
   newId: () => string;
   callbacks: LiveCallbacks;
 }) {
@@ -336,7 +338,7 @@ export function useLiveCoach(opts: {
       speak(line.reply, optsRef.current.accent);
       timer = setTimeout(turn, MOCK_NEXT_TURN_MS);
     };
-    if (!r.current.started) speak(optsRef.current.opener, optsRef.current.accent);
+    if (!r.current.started && !optsRef.current.resume) speak(optsRef.current.opener, optsRef.current.accent);
     let armed = false;
     return {
       // Like the real coach, it only "hears" a turn once mic audio is actually arriving.
@@ -482,7 +484,9 @@ export function useLiveCoach(opts: {
     const history = LiveTranscript.historyText(optsRef.current.turns());
     const kickoff = s.started
       ? `(We were cut off. Here is the conversation so far:\n${history}\nPick up naturally from there. Don't repeat your greeting.)`
-      : "(The learner just joined. Say your opening line now.)";
+      : optsRef.current.resume
+        ? `(The learner is coming back to an earlier conversation. Here it is so far:\n${history}\nPick up naturally from there with a short welcome back. Don't repeat your greeting.)`
+        : "(The learner just joined. Say your opening line now.)";
     first.sendClientContent({ turns: [{ role: "user", parts: [{ text: kickoff }] }], turnComplete: true });
 
     return {
@@ -725,10 +729,10 @@ export function useLiveCoach(opts: {
       return fail("network");
     }
 
-    if (!data.mock) stopDiagRef.current = startDiagnostics({ model: data.model, apiVersion: data.apiVersion, resumed: s.started });
+    if (!data.mock) stopDiagRef.current = startDiagnostics({ model: data.model, apiVersion: data.apiVersion, resumed: s.started || Boolean(optsRef.current.resume) });
     // Gemini speaks the opener first, so its words fill the opener bubble. Demo mode reads the opener
     // out locally, so its first scripted reply needs a bubble of its own.
-    s.transcript = makeTranscript(s.started || data.mock ? undefined : optsRef.current.openerId);
+    s.transcript = makeTranscript(s.started || optsRef.current.resume || data.mock ? undefined : optsRef.current.openerId);
     let driver: Driver;
     try {
       driver = data.mock ? mockDriver() : await liveDriver(data);

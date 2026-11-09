@@ -79,6 +79,8 @@ export interface Session {
   /** seconds of the learner actually speaking */
   speakingSeconds: number;
   takeaway?: Takeaway;
+  /** ids of user turns whose slips are already in the trouble bank (set once a session has been finished) */
+  filedTurnIds?: string[];
 }
 
 export interface TroubleWord {

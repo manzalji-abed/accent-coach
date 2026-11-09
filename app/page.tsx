@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { ContinueList } from "@/components/ContinueList";
 import { DemoNotice } from "@/components/DemoNotice";
 import { TabBar } from "@/components/TabBar";
 import { useProfileGate } from "@/components/useProfileGate";
@@ -63,6 +64,8 @@ export default function Home() {
             <span>Hear a sentence, repeat it, pass to move on.</span>
           </Link>
         </div>
+
+        <ContinueList sessions={sessions} />
 
         <h2 className="section-title">More role-plays</h2>
         <ul className="scenario-list">
