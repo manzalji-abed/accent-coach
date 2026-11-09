@@ -36,11 +36,13 @@ export const REVIEW_WORKFLOW = "Agent Review";
 
 /**
  * A PR touching any of these always waits for a human, whatever the reviewer
- * says: dependencies, build, deploy and pipeline config, secrets.
- * App code (API routes, prompts, stored data) can auto-merge: the security
+ * says: the input guards and rate limits, the Gemini client that holds the
+ * API key, dependencies, build, deploy and pipeline config, secrets.
+ * Other app code (API routes, prompts, stored data) can auto-merge: the security
  * review covers it, and the reviewer rates "low" when a human must decide.
  */
 export const SENSITIVE_PATHS = [
+  /^lib\/ai\/(guard|gemini)\.ts$/,
   /^package(-lock)?\.json$/,
   /^\.github\//,
   /^\.env/,
