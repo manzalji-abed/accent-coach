@@ -1,6 +1,7 @@
 import type { Accent, Turn } from "../types";
 import type { Scenario } from "../scenarios";
 import type { Persona } from "../personas";
+import { audienceById, DEFAULT_AUDIENCE_ID, DEFAULT_INTENT_ID, intentById, type Audience, type Intent } from "../comms";
 
 /** Who the coach is in a conversation. Built only from our own persona and scenario data. */
 export function roleLine(scenario: Scenario, persona: Persona) {
@@ -39,7 +40,9 @@ export const REVIEW_TOOL = "review_turn";
  * data and the accent setting, never from learner free text, and locked into
  * the ephemeral token so the browser can't change it.
  */
-export function livePrompt(opts: { accent: Accent; scenario: Scenario; persona: Persona }) {
+export function livePrompt(opts: { accent: Accent; scenario: Scenario; persona: Persona; audience?: Audience; intent?: Intent }) {
+  const audience = opts.audience ?? audienceById(DEFAULT_AUDIENCE_ID)!;
+  const intent = opts.intent ?? intentById(DEFAULT_INTENT_ID)!;
   const accent = ACCENT_NAME[opts.accent];
   const role = roleLine(opts.scenario, opts.persona);
   return `You are a warm, expert English pronunciation coach in a live voice conversation with a learner.
@@ -51,6 +54,12 @@ Talking:
 - The learner can already see your opening line: "${opts.scenario.opener}". When the conversation starts, say it out loud.
 - After calling ${REVIEW_TOOL}, ALWAYS reply out loud. Never end your turn in silence.
 - Keep the conversation flowing. About once every three turns, and only when you gave a correction, briefly coach out loud with the whole-sentence fix: "You said ... You could also say: ..." Invite them to say it, give a word of encouragement, then carry on with the conversation. Otherwise just reply naturally.
+
+Communication coaching:
+- The learner is talking to: ${audience.label}. They are trying to: ${intent.label.toLowerCase()}. Judge how well they communicate for that listener and goal, not only their English.
+- Audience: ${audience.rules}
+- Goal: ${intent.rules}
+- Look at: structure (did they lead with the point?), level of detail for this audience (too much, too little or right), concision (fillers, rambling), confidence (hedging, apologising) and tone.
 
 Listening:
 - You hear the learner's raw voice. Judge sounds, word stress, rhythm and intonation against ${accent}, and also grammar, word choice and phrasing. Accents are fine; clarity and natural English are the goal.
@@ -66,6 +75,7 @@ Listening:
     Leave it EMPTY only when the turn is already correct and natural; never rephrase a good sentence just for style.
   - why: one short, friendly reason naming the actual problem (e.g. "Use 'went' for the past").
   - flags: up to 3 words a native listener would actually notice as mispronounced. Respellings use hyphens between syllables and CAPS for the stressed syllable (e.g. COMF-ter-bul). IPA goes between slashes. Tips describe the mouth physically (tongue, lips, jaw, voicing, stress) in one short sentence.
+  - comms: communication coaching for that audience and goal. Set issues and a tip ONLY when something would really help (at most 3 issues, most important first); the tip is one short, concrete sentence. When the turn communicated well, leave issues and tip empty.
 - If you couldn't make out what they said, give clarity 0, no flags and no correction, and kindly ask them to say it again.`;
 }
 

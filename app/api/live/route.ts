@@ -1,6 +1,7 @@
 import { isMockMode } from "@/lib/ai/gemini";
 import { json, rateLimited } from "@/lib/ai/guard";
 import { createLiveToken } from "@/lib/ai/live";
+import { audienceById, DEFAULT_AUDIENCE_ID, DEFAULT_INTENT_ID, intentById } from "@/lib/comms";
 import { DEFAULT_PERSONA_ID, personaById } from "@/lib/personas";
 import { scenarioById } from "@/lib/scenarios";
 import type { Accent } from "@/lib/types";
@@ -24,12 +25,17 @@ export async function POST(req: Request) {
   // Only an id from our own list is accepted; it picks the voice and personality server-side.
   const persona = personaById(body?.personaId ?? (scenario.personaId || DEFAULT_PERSONA_ID));
   if (!persona) return json({ error: "Unknown conversation partner." }, 400);
+  // Audience and goal are ids from our own lists too; missing means the scenario's choice, else peer + small talk.
+  const audience = audienceById(body?.audienceId ?? scenario.audienceId ?? DEFAULT_AUDIENCE_ID);
+  if (!audience) return json({ error: "Unknown audience." }, 400);
+  const intent = intentById(body?.intentId ?? scenario.intentId ?? DEFAULT_INTENT_ID);
+  if (!intent) return json({ error: "Unknown goal for this conversation." }, 400);
   const accent: Accent = body?.accent === "uk" ? "uk" : "us";
 
   if (isMockMode()) return json({ mock: true });
 
   try {
-    return json(await createLiveToken({ accent, scenario, persona }));
+    return json(await createLiveToken({ accent, scenario, persona, audience, intent }));
   } catch (err) {
     console.error("Live token request failed", (err as { status?: number }).status, (err as Error).message);
     return json({ error: "Couldn't start a live session with your coach. Try again in a minute." }, 502);

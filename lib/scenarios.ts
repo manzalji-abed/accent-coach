@@ -9,6 +9,9 @@ export interface Scenario {
   persona: string;
   /** Default conversation partner (see lib/personas.ts). */
   personaId: string;
+  /** Preselected audience and goal (ids from lib/comms.ts) for communication practice. */
+  audienceId?: string;
+  intentId?: string;
   /** What the learner sees before starting */
   brief: string;
   /** The coach's first line */
@@ -32,6 +35,10 @@ export const SCENARIOS: Scenario[] = [
   // Role-plays
   { id: "rp-interview", goal: "business", mode: "roleplay", title: "Job interview", persona: "a hiring manager who asks sharp follow-up questions", personaId: "omar", brief: "You're interviewing for a role you want.", opener: "Thanks for coming in. Let's start simple: walk me through your background." },
   { id: "rp-salary", goal: "business", mode: "roleplay", title: "Salary negotiation", persona: "a direct manager with a tight budget", personaId: "daniel", brief: "You want a raise. Make your case.", opener: "You wanted to talk about compensation. I'm listening." },
+  { id: "rp-outage", goal: "business", mode: "roleplay", title: "Explain an outage to your CEO in 60 seconds", persona: "a busy CEO who has one minute and wants the bottom line", personaId: "maya", audienceId: "ceo", intentId: "explain-problem", brief: "Something broke in production. Say what happened, the impact and what you need, in about a minute.", opener: "I've got one minute before my next meeting. What's going on with the outage?" },
+  { id: "rp-raise", goal: "business", mode: "roleplay", title: "Ask your manager for a raise", persona: "a fair manager who wants evidence", personaId: "daniel", audienceId: "manager", intentId: "ask", brief: "Ask clearly for a raise and back it up with your results.", opener: "You asked for time to talk. What's on your mind?" },
+  { id: "rp-deadline", goal: "business", mode: "roleplay", title: "Push back on a deadline with your CTO", persona: "a CTO who wants a date and hates vague answers", personaId: "daniel", audienceId: "cto", intentId: "push-back", brief: "The deadline is unrealistic. Explain the risk and offer options.", opener: "I need this shipped by the end of the month. Is there any problem with that?" },
+  { id: "rp-delay", goal: "business", mode: "roleplay", title: "Tell a customer their order is delayed", persona: "a customer who is annoyed about a late order", personaId: "sofia", audienceId: "customer", intentId: "bad-news", brief: "Deliver the bad news with empathy and a clear next step.", opener: "Hi, I was told my order would be here by now. What's happening?" },
   { id: "rp-meeting", goal: "business", mode: "roleplay", title: "Status meeting", persona: "a project lead who wants clear updates", personaId: "leila", brief: "Give a project update and handle questions.", opener: "Morning! Can you give us a quick update on where things stand?" },
   { id: "rp-customs", goal: "travel", mode: "roleplay", title: "Customs officer", persona: "a by-the-book border officer", personaId: "daniel", brief: "Get through customs at the airport.", opener: "Passport, please. What's the purpose of your visit?" },
   { id: "rp-hotel", goal: "travel", mode: "roleplay", title: "Hotel check-in", persona: "a friendly front-desk clerk", personaId: "sofia", brief: "Check in and sort out a problem with your booking.", opener: "Good evening, welcome! Checking in?" },
