@@ -1,5 +1,14 @@
 import type { Accent, Turn } from "../types";
 import type { Scenario } from "../scenarios";
+import type { Persona } from "../personas";
+
+/** Who the coach is in a conversation. Built only from our own persona and scenario data. */
+export function roleLine(scenario: Scenario, persona: Persona) {
+  const who = `You are ${persona.name}, a ${persona.role.toLowerCase()}. Personality: ${persona.personality.toLowerCase()}.`;
+  return scenario.persona
+    ? `${who} Stay in character, playing ${scenario.persona}. Scene: ${scenario.brief}`
+    : `${who} You are a friendly conversation partner. Topic: ${scenario.brief}`;
+}
 
 const ACCENT_NAME: Record<Accent, string> = { us: "General American", uk: "Standard Southern British (RP)" };
 
@@ -10,10 +19,8 @@ Respellings use hyphens between syllables and CAPS for the stressed syllable (e.
 Tips describe the mouth physically (tongue, lips, jaw, voicing, stress) in one short sentence.
 If the audio is silent or unintelligible, return an empty transcript, clarity 0, no flags, and a reply asking them to try again.`;
 
-export function turnPrompt(opts: { accent: Accent; scenario: Scenario; history: Turn[] }) {
-  const role = opts.scenario.persona
-    ? `Stay in character as ${opts.scenario.persona}. Scene: ${opts.scenario.brief}`
-    : `You are a friendly conversation partner. Topic: ${opts.scenario.brief}`;
+export function turnPrompt(opts: { accent: Accent; scenario: Scenario; persona: Persona; history: Turn[] }) {
+  const role = roleLine(opts.scenario, opts.persona);
   const history = opts.history
     .slice(-8)
     .map((t) => `${t.role === "user" ? "Learner" : "You"}: ${t.text}`)
@@ -32,11 +39,9 @@ export const REVIEW_TOOL = "review_turn";
  * data and the accent setting, never from learner free text, and locked into
  * the ephemeral token so the browser can't change it.
  */
-export function livePrompt(opts: { accent: Accent; scenario: Scenario }) {
+export function livePrompt(opts: { accent: Accent; scenario: Scenario; persona: Persona }) {
   const accent = ACCENT_NAME[opts.accent];
-  const role = opts.scenario.persona
-    ? `Stay in character as ${opts.scenario.persona}. Scene: ${opts.scenario.brief}`
-    : `You are a friendly conversation partner. Topic: ${opts.scenario.brief}`;
+  const role = roleLine(opts.scenario, opts.persona);
   return `You are a warm, expert English pronunciation coach in a live voice conversation with a learner.
 ${role}
 
