@@ -4,7 +4,8 @@ import { ProfileForm } from "@/components/ProfileForm";
 import { TabBar } from "@/components/TabBar";
 import { useProfileGate } from "@/components/useProfileGate";
 import { dailyReminderIcs } from "@/lib/ics";
-import { resetAll, saveProfile } from "@/lib/store";
+import { resetAll, saveProfile, setTheme, themeOf } from "@/lib/store";
+import type { ThemePref } from "@/lib/types";
 
 export default function SettingsPage() {
   const app = useProfileGate();
@@ -25,6 +26,15 @@ export default function SettingsPage() {
     <>
       <main className="page">
         <h1 className="page-title">Settings</h1>
+
+        <h2 className="section-title">Theme</h2>
+        <div className="segmented segmented-3" role="group" aria-label="Theme" data-testid="theme-setting">
+          {(["system", "light", "dark"] as ThemePref[]).map((t) => (
+            <button key={t} type="button" className="choice" aria-pressed={themeOf(app.profile) === t} onClick={() => setTheme(t)}>
+              <strong>{t === "system" ? "System" : t === "light" ? "Light" : "Dark"}</strong>
+            </button>
+          ))}
+        </div>
 
         <h2 className="section-title">Daily reminder</h2>
         <p className="lede" style={{ marginBottom: 12 }}>

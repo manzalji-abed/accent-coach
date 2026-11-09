@@ -1,7 +1,7 @@
 "use client";
 import { useSyncExternalStore } from "react";
 import { mergeTroubleWords } from "./progress";
-import type { Profile, Session, TroubleWord } from "./types";
+import type { Profile, Session, ThemePref, TroubleWord } from "./types";
 
 /**
  * Everything lives on the device for the MVP (no accounts). One localStorage
@@ -82,6 +82,19 @@ export function saveSession(session: Session, opts: { finished?: boolean } = {})
 export function removeTroubleWord(word: string) {
   const current = load();
   commit({ ...current, trouble: current.trouble.filter((w) => w.word !== word) });
+}
+
+/** The stored theme choice; anything unrecognised means System. */
+export function themeOf(profile: Pick<Profile, "theme"> | null | undefined): ThemePref {
+  const t = profile?.theme;
+  return t === "light" || t === "dark" ? t : "system";
+}
+
+/** Save the theme with the profile. Does nothing before onboarding creates one. */
+export function setTheme(theme: ThemePref) {
+  const current = load();
+  if (!current.profile) return;
+  commit({ ...current, profile: { ...current.profile, theme } });
 }
 
 export function resetAll() {
