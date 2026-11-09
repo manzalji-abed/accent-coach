@@ -15,7 +15,8 @@ import { useLiveCoach, type LiveStatus } from "@/lib/live/useLiveCoach";
 import { DEFAULT_PERSONA_ID, PERSONAS, personaById } from "@/lib/personas";
 import { scenarioById } from "@/lib/scenarios";
 import { speak, stopSpeaking } from "@/lib/speech";
-import { newId, saveSession } from "@/lib/store";
+import { findResumable, reopen } from "@/lib/resume";
+import { newId, saveSession, type AppState } from "@/lib/store";
 import type { Correction, Session, Takeaway, WordFlag } from "@/lib/types";
 
 const MIC_STATE: Record<LiveStatus, MicState> = { idle: "idle", connecting: "requesting", listening: "recording", paused: "paused" };
@@ -29,19 +30,31 @@ const MIC_LABEL: Record<LiveStatus, string> = {
 function TalkScreen() {
   const params = useSearchParams();
   const app = useProfileGate();
-  const scenario = scenarioById(params.get("scenario") ?? "") ?? scenarioById("free-daily")!;
+  if (!app) return null;
+  // Wait for the stored data, so the session to continue is known when the screen first renders.
+  const resumeId = params.get("resume") ?? "";
+  const earlier = resumeId ? findResumable(app.sessions, resumeId) : null;
+  return <Talk key={earlier?.id ?? params.get("scenario") ?? ""} app={app} earlier={earlier} scenarioParam={params.get("scenario") ?? ""} />;
+}
+
+function Talk({ app, earlier, scenarioParam }: { app: AppState; earlier: Session | null; scenarioParam: string }) {
+  const scenario = scenarioById(earlier?.scenarioId ?? scenarioParam) ?? scenarioById("free-daily")!;
   const accent = app?.profile?.accent ?? "us";
   const [personaId, setPersonaId] = useState(scenario.personaId || DEFAULT_PERSONA_ID);
   const persona = personaById(personaId) ?? personaById(DEFAULT_PERSONA_ID)!;
 
-  const [session, setSession] = useState<Session>(() => ({
-    id: newId(),
-    mode: scenario.mode,
-    scenarioId: scenario.id,
-    startedAt: new Date().toISOString(),
-    turns: [{ id: newId(), role: "coach", text: scenario.opener }],
-    speakingSeconds: 0,
-  }));
+  const [session, setSession] = useState<Session>(() =>
+    earlier
+      ? reopen(earlier)
+      : {
+          id: newId(),
+          mode: scenario.mode,
+          scenarioId: scenario.id,
+          startedAt: new Date().toISOString(),
+          turns: [{ id: newId(), role: "coach", text: scenario.opener }],
+          speakingSeconds: 0,
+        },
+  );
   const [clips, setClips] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<{ flag: WordFlag; clip?: string; text?: string } | null>(null);
   const [fix, setFix] = useState<{ said: string; correction: Correction } | null>(null);
@@ -58,6 +71,7 @@ function TalkScreen() {
     opener: scenario.opener,
     openerId: session.turns[0].id,
     turns: () => sessionRef.current.turns,
+    resume: Boolean(earlier),
     newId,
     callbacks: {
       userText: (id, text) => setSession((s) => ({ ...s, turns: upsertTurn(s.turns, id, { role: "user", text }) })),
@@ -115,8 +129,6 @@ function TalkScreen() {
     setSession((s) => ({ ...s, takeaway: { takeaway: takeaway.takeaway, focus: takeaway.focus } }));
     setSummaryLoading(false);
   };
-
-  if (!app) return null;
 
   const userTurnCount = session.turns.filter((t) => t.role === "user").length;
   if (finished && userTurnCount > 0) {

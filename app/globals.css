@@ -300,6 +300,10 @@ a {
   display: block;
   color: var(--muted);
 }
+.scenario-list .btn-text {
+  color: var(--voice);
+  font-weight: 600;
+}
 
 .notice {
   margin: 12px 0 0;

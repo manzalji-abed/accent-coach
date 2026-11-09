@@ -104,3 +104,22 @@ test("free talk lets you pick who to talk to", async ({ page }) => {
   await expect(page.getByTestId("persona-picker")).toHaveCount(0);
   await expect(page.getByTestId("persona-name")).toContainText("Maya Chen");
 });
+
+test("continue a finished conversation: old turns show and one more turn is added to the same session", async ({ page }) => {
+  await onboard(page);
+  await page.getByRole("link", { name: /Free talk/ }).click();
+  await speakTurn(page);
+  await expect(page.getByTestId("user-bubble")).toHaveCount(1);
+  await page.getByRole("button", { name: "Finish" }).click();
+  await page.goto("/");
+
+  await page.getByTestId("continue-link").first().click();
+  await expect(page).toHaveURL(/\/talk\?resume=/);
+  await expect(page.getByTestId("user-bubble")).toHaveCount(1);
+
+  await speakTurn(page);
+  await expect(page.getByTestId("user-bubble")).toHaveCount(2);
+
+  await page.goto("/progress");
+  await expect(page.getByTestId("continue-link")).toHaveCount(1);
+});

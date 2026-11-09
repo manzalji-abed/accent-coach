@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
+import { ContinueList } from "@/components/ContinueList";
 import { TabBar } from "@/components/TabBar";
 import { useProfileGate } from "@/components/useProfileGate";
 import { WordSheet } from "@/components/WordSheet";
@@ -135,6 +136,8 @@ export default function ProgressPage() {
             No trouble words yet. <Link href="/">Start a session</Link> and any word that slips lands here.
           </p>
         )}
+
+        <ContinueList sessions={app.sessions} limit={5} />
 
         <h2 className="section-title">History</h2>
         {done.length ? (
