@@ -86,7 +86,7 @@ export function planBefore(d, { runUrl, maxFixAttempts = 3 } = {}) {
         // after-merge steps run right here instead.
         return [
           ...labels,
-          ...(d.issue ? [status(d.issue, `#${d.pr} passed tests and security review with high confidence. Merging automatically.`)] : []),
+          ...(d.issue ? [status(d.issue, `#${d.pr} passed tests and security review. Merging automatically.`)] : []),
           {
             op: "merge",
             pr: d.pr,
@@ -217,15 +217,16 @@ export function planReview(result, { pr, sha, runUrl, context }) {
   const rows = findings
     .slice(0, 15)
     .map((f) => `| ${cell(f.severity ?? "?")} | \`${cell(f.file ?? "?")}${f.line ? `:${Number(f.line) || ""}` : ""}\` | ${cell(f.issue)} | ${cell(f.fix)} |`);
-  // Auto-merge eligibility is decided here, in code: the model's "high" only
-  // counts when it also approved and every finding is low severity.
+  // Auto-merge eligibility is decided here, in code: the model's "high" or
+  // "medium" only counts when it also approved and every finding is low severity.
   const confidence = ["high", "medium", "low"].includes(result?.confidence) ? result.confidence : null;
   const reason = clean(result?.confidence_reason).trim();
   const serious = findings.filter((f) => f.severity !== "low").length;
-  const eligible = ok && confidence === "high" && serious === 0;
+  const confident = confidence === "high" || confidence === "medium";
+  const eligible = ok && confident && serious === 0;
   const why = !ok
     ? "the review didn't approve it"
-    : confidence !== "high"
+    : !confident
       ? `the reviewer's confidence is ${confidence ?? "missing"}${reason ? ` (${reason})` : ""}`
       : serious
         ? `the review has ${serious} finding${serious === 1 ? "" : "s"} above low severity`

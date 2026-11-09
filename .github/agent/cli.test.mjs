@@ -120,11 +120,11 @@ describe("run.mjs against a mock GitHub API (real HTTP client, real CLI)", () =>
   };
 
   it("decide on an Agent Review run reported on main finds the PR by its review status and marks it ready", async () => {
-    const { pr } = await agentPrWithReview({ verdict: "approve", summary: "OK", confidence: "medium", confidence_reason: "Touches a shared style.", findings: [] });
+    const { pr } = await agentPrWithReview({ verdict: "approve", summary: "OK", confidence: "low", confidence_reason: "Could drop saved sessions.", findings: [] });
     const r = await cli(["decide"], { ...reviewRun("https://run/review-7"), AGENT_AUTO_MERGE: "true" });
     expect(r.code, r.stderr).toBe(0);
     expect(JSON.parse(r.outputs.decision)).toMatchObject({ action: "ready", pr, autoMerge: false });
-    expect(api.fake.botComments(pr).at(-1)).toMatch(/Ready for you to merge\.\n\nNot merged automatically: the reviewer's confidence is medium/);
+    expect(api.fake.botComments(pr).at(-1)).toMatch(/Ready for you to merge\.\n\nNot merged automatically: the reviewer's confidence is low/);
     expect(api.fake.apiMerges).toEqual([]);
   });
 
@@ -150,14 +150,14 @@ describe("run.mjs against a mock GitHub API (real HTTP client, real CLI)", () =>
     expect(api.fake.apiMerges).toEqual([]);
   });
 
-  it("auto-merge never merges a PR that touches lib/ai, even rated high (files come from the real API client)", async () => {
+  it("auto-merge never merges a PR that changes dependencies, even rated high (files come from the real API client)", async () => {
     api = await startMockApi();
-    const i = api.fake.createIssue({ title: "Tweak prompt" });
-    const pr = api.fake.openPr({ headRef: `agent/issue-${i}`, files: ["lib/ai/prompts.ts"] });
+    const i = api.fake.createIssue({ title: "Add a library" });
+    const pr = api.fake.openPr({ headRef: `agent/issue-${i}`, files: ["lib/ai/prompts.ts", "package.json"] });
     const sha = api.fake.items.get(pr).headSha;
     await cli(["after", "review"], { PR_NUMBER: String(pr), HEAD_SHA: sha, RUN_URL: "https://run/review-7", RESULT: JSON.stringify({ verdict: "approve", summary: "OK", confidence: "high", confidence_reason: "x", findings: [] }) });
     const r = await cli(["decide"], { ...reviewRun("https://run/review-7"), AGENT_AUTO_MERGE: "true" });
-    expect(JSON.parse(r.outputs.decision)).toMatchObject({ action: "ready", autoMerge: false, manualReason: expect.stringMatching(/sensitive files.*lib\/ai\/prompts\.ts/) });
+    expect(JSON.parse(r.outputs.decision)).toMatchObject({ action: "ready", autoMerge: false, manualReason: expect.stringMatching(/sensitive files \(`package\.json`\)/) });
     expect(api.fake.apiMerges).toEqual([]);
   });
 

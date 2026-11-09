@@ -11,7 +11,7 @@ import { CI_WORKFLOW, LABELS, MARK, REVIEW_WORKFLOW, issueFromBranch, readReview
  *   block    stop retrying and ask a human for help
  *   stop     a human said stop: clear agent labels
  *   ready    tests and review passed: tell the human, or merge if auto-merge
- *            is on and the reviewer rated this exact commit high confidence
+ *            is on and the review made this exact commit eligible (approved, high or medium confidence, no serious findings)
  *   done     PR merged or closed: tidy labels
  *   setup    the repo is missing a required secret: explain once
  *   noop     nothing to do (reason says why, for the logs)
@@ -116,10 +116,10 @@ export function decide(ctx) {
           const shown = sensitive.slice(0, 3).map((f) => `\`${f}\``).join(", ");
           return { ...ready, manualReason: `it changes sensitive files (${shown}${sensitive.length > 3 ? ", …" : ""})` };
         }
-        // Auto-merge only what the reviewer rated high confidence, for this exact commit.
+        // Auto-merge only what the review marked eligible, for this exact commit.
         const meta = readReviewMeta(ctx.prComments);
-        if (meta?.eligible === true && meta.sha === run.head_sha) return { ...ready, reason: "tests and review passed, high confidence", autoMerge: true };
-        return { ...ready, manualReason: meta?.why || "the review didn't rate it high confidence" };
+        if (meta?.eligible === true && meta.sha === run.head_sha) return { ...ready, reason: "tests and review passed, eligible for auto-merge", autoMerge: true };
+        return { ...ready, manualReason: meta?.why || "the review didn't mark it eligible for auto-merge" };
       }
       return noop(`ignoring ${run.name}`);
     }

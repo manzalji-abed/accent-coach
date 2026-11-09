@@ -36,13 +36,11 @@ export const REVIEW_WORKFLOW = "Agent Review";
 
 /**
  * A PR touching any of these always waits for a human, whatever the reviewer
- * says: server code, AI prompts and guards, stored data, dependencies, build,
- * deploy and pipeline config, secrets.
+ * says: dependencies, build, deploy and pipeline config, secrets.
+ * App code (API routes, prompts, stored data) can auto-merge: the security
+ * review covers it, and the reviewer rates "low" when a human must decide.
  */
 export const SENSITIVE_PATHS = [
-  /^app\/api\//,
-  /^lib\/ai\//,
-  /^lib\/store\.ts$/,
   /^package(-lock)?\.json$/,
   /^\.github\//,
   /^\.env/,
@@ -56,7 +54,7 @@ export function readConfig(env = process.env) {
   const max = parseInt(env.AGENT_MAX_FIX_ATTEMPTS ?? "", 10);
   return {
     maxFixAttempts: Number.isFinite(max) && max > 0 ? max : 3,
-    // Only ever merges PRs the reviewer rated high confidence; see decide.mjs.
+    // Only merges PRs the reviewer approved with high or medium confidence and no serious findings; see decide.mjs.
     autoMerge: String(env.AGENT_AUTO_MERGE ?? "").toLowerCase() === "true",
   };
 }
