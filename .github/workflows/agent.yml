@@ -39,6 +39,7 @@ jobs:
       contents: write # only to send repository_dispatch (start the next PLAN.md item)
       issues: write
       pull-requests: write
+      statuses: read # find which PR an Agent Review run belongs to (by its commit status)
     outputs:
       action: ${{ steps.decide.outputs.action }}
       decision: ${{ steps.decide.outputs.decision }}
