@@ -35,6 +35,7 @@ const TYPES = new Set([
 /** Allowed detail keys and the one value type each may have. */
 const KEYS: Record<string, "number" | "boolean" | "string"> = {
   sent: "number",
+  silent: "number",
   gated: "number",
   msgs: "number",
   audio: "number",

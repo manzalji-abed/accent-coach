@@ -5,7 +5,7 @@ import { mockTurn } from "../ai/mock";
 import { REVIEW_TOOL } from "../ai/prompts";
 import { builtInVoiceActive, speak, stopSpeaking } from "../speech";
 import type { Accent, Turn } from "../types";
-import { base64ToBytes, ClipBuffer, estimateWordSpan, LIVE_INPUT_MIME, LIVE_INPUT_RATE, LIVE_OUTPUT_RATE, micChunkToLive, pcm16BytesToFloat, SPEECH_THRESHOLD, speechLevel } from "./pcm";
+import { base64ToBytes, ClipBuffer, estimateWordSpan, FrozenInput, LIVE_INPUT_MIME, LIVE_INPUT_RATE, LIVE_OUTPUT_RATE, micChunkToLive, pcm16BytesToFloat, SPEECH_THRESHOLD, speechLevel } from "./pcm";
 import { LiveTranscript, type TranscriptEvents } from "./transcript";
 
 export type LiveStatus = "idle" | "connecting" | "listening" | "paused";
@@ -36,7 +36,16 @@ const MAX_RESTARTS_PER_MIN = 2;
 const MIC_CONSTRAINTS: MediaStreamConstraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } };
 /** No mic audio for this long while the audio engine runs means the phone stopped the mic: reconnect it. */
 const MIC_STALL_MS = 1500;
-const MAX_MIC_RESTARTS_PER_MIN = 3;
+// Each play on iPhone can interrupt the audio engine and so need one rebuild; 6 a minute
+// covers a learner replaying samples, while a mic that keeps failing still ends in the
+// "reconnect" message instead of a loop.
+const MAX_MIC_RESTARTS_PER_MIN = 6;
+/** The same mic buffer repeating this many times in a row means Safari froze the mic input. */
+const MIC_FROZEN_CHUNKS = 6;
+/** iOS marked the mic track muted for this long: reconnect. */
+const MIC_MUTED_MS = 1000;
+/** The mic delivered exact zeros for this long while listening: reconnect. */
+const MIC_SILENT_MS = 2000;
 
 /** Fixed text (never learner input) sent when the coach ends a turn without answering. */
 const NUDGE_TEXT = "(Answer the learner out loud now and keep the conversation going.)";
@@ -88,6 +97,12 @@ export function useLiveCoach(opts: {
     source: null as MediaStreamAudioSourceNode | null,
     /** Last time the mic delivered audio; iOS can silently stop the mic after its own voice plays. */
     lastChunkAt: 0,
+    /** When the mic started delivering digital silence (exact zeros), or iOS marked the track muted. */
+    silentSince: 0,
+    mutedSince: 0,
+    /** The audio engine was interrupted; when it comes back the mic input must be rebuilt. */
+    wasInterrupted: false,
+    frozen: new FrozenInput(MIC_FROZEN_CHUNKS),
     micRestarting: false,
     micRestarts: [] as number[],
     nudgeTimer: undefined as ReturnType<typeof setTimeout> | undefined,
@@ -121,7 +136,7 @@ export function useLiveCoach(opts: {
     restarting: false,
     // diagnostics (real sessions only)
     diag: null as null | ((type: string, detail?: Record<string, unknown>) => void),
-    stats: { sent: 0, gated: 0, msgs: 0, audio: 0, inText: 0, outText: 0, tools: 0, turns: 0, interrupts: 0 },
+    stats: { silent: 0, sent: 0, gated: 0, msgs: 0, audio: 0, inText: 0, outText: 0, tools: 0, turns: 0, interrupts: 0 },
   });
 
   const fail = useCallback((kind: LiveError, message = LIVE_MESSAGES[kind]) => {
@@ -571,11 +586,20 @@ export function useLiveCoach(opts: {
     s.source = ctx.createMediaStreamSource(stream);
     s.source.connect(node);
     s.lastChunkAt = performance.now();
+    s.silentSince = 0;
+    s.mutedSince = 0;
+    s.frozen.reset();
     const track = stream.getAudioTracks()[0];
     if (track) {
       track.onended = () => void restartMic("ended");
-      track.onmute = () => s.diag?.("mic-mute");
-      track.onunmute = () => s.diag?.("mic-unmute");
+      track.onmute = () => {
+        s.diag?.("mic-mute");
+        s.mutedSince = performance.now();
+      };
+      track.onunmute = () => {
+        s.diag?.("mic-unmute");
+        s.mutedSince = 0;
+      };
     }
   };
 
@@ -628,7 +652,15 @@ export function useLiveCoach(opts: {
     // Phones pause the audio engine on route changes or interruptions; resume it.
     ctx.onstatechange = () => {
       s.diag?.("ctx-state", { state: ctx.state });
-      if (ctx.state !== "running" && ctx.state !== "closed" && !s.closing) void ctx.resume().catch(() => {});
+      if (ctx.state !== "running" && ctx.state !== "closed" && !s.closing) {
+        s.wasInterrupted = true;
+        void ctx.resume().catch(() => {});
+      } else if (ctx.state === "running" && s.wasInterrupted && !s.closing) {
+        // Seen live on iPhone: after an interruption the mic keeps "delivering" a loud,
+        // frozen buffer that isn't speech, so the coach hears noise forever. Rebuild it.
+        s.wasInterrupted = false;
+        if (s.node) void restartMic("after interruption");
+      }
     };
     let stream: MediaStream;
     try {
@@ -655,6 +687,13 @@ export function useLiveCoach(opts: {
         setLevel(s.listening ? lvl : 0);
         const now = performance.now();
         s.lastChunkAt = now;
+        // Frozen input: the very same buffer over and over (a real mic never repeats exactly).
+        if (s.frozen.push(e.data, lvl) && !s.micRestarting) void restartMic("frozen input");
+        // A real microphone always has some noise. Exact zeros mean iOS muted it behind our back.
+        if (lvl === 0) {
+          s.stats.silent++;
+          s.silentSince ||= now;
+        } else s.silentSince = 0;
         const { base64, pcm16k } = micChunkToLive(e.data, ctx.sampleRate);
         // Buffered from the moment the mic opens (kept only on this device), so the
         // start of a turn is there for "Play yours" even if connecting was slow.
@@ -717,6 +756,10 @@ export function useLiveCoach(opts: {
         // iOS can stop the mic (track muted or no frames) after its own voice plays, while the audio engine keeps running.
         if (s.ctx?.state === "running" && !s.micRestarting && now - s.lastChunkAt > MIC_STALL_MS && !builtInVoiceActive()) {
           void restartMic("stalled");
+        } else if (!s.micRestarting && !builtInVoiceActive() && now > s.clipPlayingUntil) {
+          // The mic still delivers frames but iOS has muted it: reconnect it.
+          if (s.mutedSince && now - s.mutedSince > MIC_MUTED_MS) void restartMic("muted");
+          else if (s.listening && s.silentSince && now - s.silentSince > MIC_SILENT_MS) void restartMic("digital silence");
         }
         if (!s.listening || s.restarting || coachAudible()) return;
         if (s.speechMsSinceModel > 1000 && s.lastSpeechAt > s.lastModelAt && now - s.lastSpeechAt > STUCK_AFTER_MS) {

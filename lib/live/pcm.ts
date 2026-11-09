@@ -129,3 +129,37 @@ export function estimateWordSpan(samples: Float32Array, sampleRate: number, text
   const pad = (padMs / 1000) * sampleRate;
   return { start: Math.max(0, first - pad) / sampleRate, end: Math.min(samples.length, last + pad) / sampleRate };
 }
+
+/** A cheap fingerprint of a mic buffer, safe for any length (0 for an empty buffer). */
+export function chunkSignature(d: Float32Array): number {
+  if (!d.length) return 0;
+  const at = (f: number) => d[Math.min(d.length - 1, Math.floor(f * (d.length - 1)))];
+  return at(0) + at(0.13) * 3 + at(0.37) * 7 + at(0.71) * 13 + at(1) * 17;
+}
+
+/**
+ * Counts identical mic buffers in a row. A real microphone never repeats a
+ * buffer exactly; after an iOS audio interruption Safari can keep handing out
+ * the same frozen buffer, which looks loud but carries no speech.
+ * Silent buffers never count (a muted mic is handled separately).
+ */
+export class FrozenInput {
+  private last = Number.NaN;
+  private repeats = 0;
+  constructor(private readonly limit = 6) {}
+
+  /** Feed one buffer; returns true when it has repeated `limit` times in a row. */
+  push(chunk: Float32Array, level: number): boolean {
+    const sig = chunkSignature(chunk);
+    this.repeats = level > 0 && sig === this.last ? this.repeats + 1 : 0;
+    this.last = sig;
+    if (this.repeats < this.limit) return false;
+    this.repeats = 0;
+    return true;
+  }
+
+  reset() {
+    this.last = Number.NaN;
+    this.repeats = 0;
+  }
+}
