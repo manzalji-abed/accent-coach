@@ -30,6 +30,20 @@ export const LATE_TEXT_MS = 1500;
 
 const tidy = (s: string) => s.replace(/\s+/g, " ").trim();
 
+/**
+ * Adds a transcription fragment. Gemini sometimes resends the whole sentence
+ * at the end of a turn; if the fragment already contains everything so far,
+ * it replaces the text instead of doubling it.
+ */
+export function addFragment(prev: string, fragment: string): string {
+  const p = tidy(prev);
+  const f = tidy(fragment);
+  // A full-sentence resend (not a repeated short word like "no... no").
+  if (p.length >= 12 && f.length >= p.length && f.startsWith(p)) return fragment.trimStart() === fragment ? fragment : (prev.match(/^\s*/)?.[0] ?? "") + f;
+  if (p && f.length > 12 && p.endsWith(f)) return prev;
+  return prev + fragment;
+}
+
 export class LiveTranscript {
   private user: { id: string; text: string; start: number } | null = null;
   private lastUser: { id: string; text: string; end: number } | null = null;
@@ -55,7 +69,7 @@ export class LiveTranscript {
       // Late transcription of the turn that just ended, before the coach has said a word.
       const late = this.lastUser && now - this.lastUser.end < LATE_TEXT_MS && !this.coach?.text;
       if (late && this.lastUser) {
-        this.lastUser.text += fragment;
+        this.lastUser.text = addFragment(this.lastUser.text, fragment);
         this.ev.userText(this.lastUser.id, tidy(this.lastUser.text));
         return;
       }
@@ -63,7 +77,7 @@ export class LiveTranscript {
       this.user = { id: this.newId(), text: "", start: now - SPEECH_LEAD_MS };
       this.answered = false;
     }
-    this.user.text += fragment;
+    this.user.text = addFragment(this.user.text, fragment);
     const text = tidy(this.user.text);
     if (text) this.ev.userText(this.user.id, text);
   }
@@ -72,7 +86,7 @@ export class LiveTranscript {
   heardCoach(fragment: string, now: number) {
     this.endUser(now);
     const coach = this.startCoach();
-    coach.text += fragment;
+    coach.text = addFragment(coach.text, fragment);
     const text = tidy(coach.text);
     if (text) this.ev.coachText(coach.id, text);
   }

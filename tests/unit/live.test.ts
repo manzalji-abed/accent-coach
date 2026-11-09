@@ -6,6 +6,8 @@ import {
   base64ToBytes,
   bytesToBase64,
   ClipBuffer,
+  chunkSignature,
+  FrozenInput,
   estimateWordSpan,
   floatToPcm16Bytes,
   LIVE_INPUT_MIME,
@@ -13,7 +15,7 @@ import {
   pcm16BytesToFloat,
   speechLevel,
 } from "@/lib/live/pcm";
-import { LATE_TEXT_MS, LiveTranscript, SPEECH_LEAD_MS, upsertTurn, type Review } from "@/lib/live/transcript";
+import { addFragment, LATE_TEXT_MS, LiveTranscript, SPEECH_LEAD_MS, upsertTurn, type Review } from "@/lib/live/transcript";
 import { rateLimited } from "@/lib/ai/guard";
 import { builtInVoiceActive, estimateSpeechMs, stopSpeaking } from "@/lib/speech";
 import { normalizeReview } from "@/lib/ai/schemas";
@@ -337,5 +339,44 @@ describe("built-in voice timing (keeps the live mic muted only while it talks)",
     expect(builtInVoiceActive()).toBe(false);
     stopSpeaking();
     expect(builtInVoiceActive()).toBe(false);
+  });
+});
+
+
+describe("live transcript: Gemini resending the whole sentence", () => {
+  it("replaces instead of doubling when the fragment repeats everything so far", () => {
+    const first = addFragment(addFragment("", "So, let's get"), " back to work?");
+    expect(addFragment(first, "So, let's get back to work?")).toBe("So, let's get back to work?");
+  });
+  it("ignores a long fragment that just repeats the end, and appends normal pieces", () => {
+    expect(addFragment("I don't have a name, but I'm here.", "but I'm here.")).toBe("I don't have a name, but I'm here.");
+    expect(addFragment("Hello", " there")).toBe("Hello there");
+  });
+});
+
+
+describe("live audio: spotting a frozen mic (iOS after an interruption)", () => {
+  const noisy = () => Float32Array.from({ length: 4096 }, () => Math.random() - 0.5);
+
+  it("flags the same buffer repeating, but never real changing audio", () => {
+    const frozen = new FrozenInput(3);
+    const stuck = noisy();
+    expect([frozen.push(stuck, 0.5), frozen.push(stuck, 0.5), frozen.push(stuck, 0.5), frozen.push(stuck, 0.5)]).toEqual([false, false, false, true]);
+    const live = new FrozenInput(3);
+    expect(Array.from({ length: 20 }, () => live.push(noisy(), 0.5)).some(Boolean)).toBe(false);
+  });
+
+  it("ignores silence (handled separately) and works on short or empty buffers", () => {
+    const frozen = new FrozenInput(2);
+    const zeros = new Float32Array(128);
+    expect([frozen.push(zeros, 0), frozen.push(zeros, 0), frozen.push(zeros, 0)]).toEqual([false, false, false]);
+    expect(Number.isFinite(chunkSignature(new Float32Array([0.2, 0.4])))).toBe(true);
+    expect(chunkSignature(new Float32Array(0))).toBe(0);
+  });
+});
+
+describe("live transcript: keeping real repeats", () => {
+  it("doesn't collapse a short repeated word", () => {
+    expect(addFragment("no", " no")).toBe("no no");
   });
 });
