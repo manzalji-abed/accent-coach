@@ -76,6 +76,7 @@ interface TokenResponse {
  */
 export function useLiveCoach(opts: {
   scenarioId: string;
+  personaId: string;
   accent: Accent;
   opener: string;
   openerId: string;
@@ -502,7 +503,7 @@ export function useLiveCoach(opts: {
     const res = await fetch("/api/live", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scenarioId: optsRef.current.scenarioId, accent: optsRef.current.accent }),
+      body: JSON.stringify({ scenarioId: optsRef.current.scenarioId, personaId: optsRef.current.personaId, accent: optsRef.current.accent }),
     });
     const data = (await res.json().catch(() => ({}))) as TokenResponse;
     return { ...data, ok: res.ok };

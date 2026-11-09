@@ -3,6 +3,7 @@ import { json, rateLimited, readAudio } from "@/lib/ai/guard";
 import { mockTurn } from "@/lib/ai/mock";
 import { turnPrompt } from "@/lib/ai/prompts";
 import { normalizeTurn, turnSchema } from "@/lib/ai/schemas";
+import { DEFAULT_PERSONA_ID, personaById } from "@/lib/personas";
 import { scenarioById } from "@/lib/scenarios";
 import type { Accent, Turn } from "@/lib/types";
 
@@ -38,7 +39,7 @@ export async function POST(req: Request) {
   if (isMockMode()) return json({ ...mockTurn(history), mock: true });
 
   try {
-    const prompt = turnPrompt({ accent, scenario, history });
+    const prompt = turnPrompt({ accent, scenario, persona: personaById(scenario.personaId) ?? personaById(DEFAULT_PERSONA_ID)!, history });
     const raw = await generateJson({ ...prompt, audio: audio.audio, schema: turnSchema });
     return json(normalizeTurn(raw));
   } catch (err) {

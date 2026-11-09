@@ -410,6 +410,51 @@ a {
   flex: 1;
   min-width: 0;
 }
+.personas {
+  border: 0;
+  margin: 0;
+  padding: 10px var(--gutter);
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+}
+.personas legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.persona {
+  flex: 0 0 auto;
+  width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+.persona strong {
+  color: inherit;
+  font-size: 0.9rem;
+}
+.persona[data-on="true"] {
+  border-color: var(--voice);
+}
+.persona:has(input:focus-visible) {
+  outline: 2px solid var(--voice);
+  outline-offset: 2px;
+}
+.persona input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
 .chat {
   flex: 1;
   overflow-y: auto;

@@ -12,6 +12,7 @@ import { useProfileGate } from "@/components/useProfileGate";
 import { WordSheet } from "@/components/WordSheet";
 import { upsertTurn } from "@/lib/live/transcript";
 import { useLiveCoach, type LiveStatus } from "@/lib/live/useLiveCoach";
+import { DEFAULT_PERSONA_ID, PERSONAS, personaById } from "@/lib/personas";
 import { scenarioById } from "@/lib/scenarios";
 import { speak, stopSpeaking } from "@/lib/speech";
 import { newId, saveSession } from "@/lib/store";
@@ -30,6 +31,8 @@ function TalkScreen() {
   const app = useProfileGate();
   const scenario = scenarioById(params.get("scenario") ?? "") ?? scenarioById("free-daily")!;
   const accent = app?.profile?.accent ?? "us";
+  const [personaId, setPersonaId] = useState(scenario.personaId || DEFAULT_PERSONA_ID);
+  const persona = personaById(personaId) ?? personaById(DEFAULT_PERSONA_ID)!;
 
   const [session, setSession] = useState<Session>(() => ({
     id: newId(),
@@ -50,6 +53,7 @@ function TalkScreen() {
 
   const live = useLiveCoach({
     scenarioId: scenario.id,
+    personaId: persona.id,
     accent,
     opener: scenario.opener,
     openerId: session.turns[0].id,
@@ -153,12 +157,29 @@ function TalkScreen() {
       <header className="talk-head">
         <div className="grow">
           <h1>{scenario.title}</h1>
-          <p>{scenario.persona ? scenario.persona.split(",")[0] : scenario.brief}</p>
+          <p data-testid="persona-name">
+            {persona.name}, {persona.role.toLowerCase()}
+          </p>
         </div>
         <Link href="/" className="icon-btn" aria-label="Leave without saving">
           <CloseIcon />
         </Link>
       </header>
+
+      {scenario.mode === "talk" && userTurnCount === 0 && live.status === "idle" && (
+        <fieldset className="personas" data-testid="persona-picker">
+          <legend>Who do you want to talk to?</legend>
+          {PERSONAS.map((p) => (
+            <label key={p.id} className="persona" data-on={p.id === persona.id}>
+              <input type="radio" name="persona" value={p.id} checked={p.id === persona.id} onChange={() => setPersonaId(p.id)} />
+              <strong>{p.name}</strong>
+              <span>
+                {p.role}. {p.personality}.
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      )}
 
       <div className="chat" ref={chatRef} aria-live="polite" data-testid="chat">
         <DemoNotice />

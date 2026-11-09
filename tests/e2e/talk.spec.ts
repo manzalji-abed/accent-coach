@@ -90,3 +90,17 @@ test("native samples ask for Gemini's voice first, fall back cleanly, and the co
   await speakTurn(page);
   await expect(page.getByTestId("user-bubble")).toHaveCount(2);
 });
+
+test("free talk lets you pick who to talk to", async ({ page }) => {
+  await onboard(page);
+  await page.getByRole("link", { name: /Free talk/ }).click();
+  await expect(page.getByTestId("persona-picker")).toBeVisible();
+  await expect(page.getByTestId("persona-name")).toContainText("Omar Haddad");
+  await page.getByText("Maya Chen").click();
+  await expect(page.getByTestId("persona-name")).toContainText("Maya Chen");
+
+  await page.getByTestId("mic").click();
+  await expect(page.getByTestId("mic")).toHaveAttribute("data-state", "recording");
+  await expect(page.getByTestId("persona-picker")).toHaveCount(0);
+  await expect(page.getByTestId("persona-name")).toContainText("Maya Chen");
+});
