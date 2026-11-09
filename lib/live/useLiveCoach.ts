@@ -5,7 +5,7 @@ import { mockTurn } from "../ai/mock";
 import { REVIEW_TOOL } from "../ai/prompts";
 import { builtInVoiceActive, speak, stopSpeaking } from "../speech";
 import type { Accent, Turn } from "../types";
-import { base64ToBytes, ClipBuffer, estimateWordSpan, LIVE_INPUT_MIME, LIVE_INPUT_RATE, LIVE_OUTPUT_RATE, micChunkToLive, pcm16BytesToFloat, SPEECH_THRESHOLD, speechLevel } from "./pcm";
+import { base64ToBytes, ClipBuffer, estimateWordSpan, FrozenInput, LIVE_INPUT_MIME, LIVE_INPUT_RATE, LIVE_OUTPUT_RATE, micChunkToLive, pcm16BytesToFloat, SPEECH_THRESHOLD, speechLevel } from "./pcm";
 import { LiveTranscript, type TranscriptEvents } from "./transcript";
 
 export type LiveStatus = "idle" | "connecting" | "listening" | "paused";
@@ -36,7 +36,10 @@ const MAX_RESTARTS_PER_MIN = 2;
 const MIC_CONSTRAINTS: MediaStreamConstraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } };
 /** No mic audio for this long while the audio engine runs means the phone stopped the mic: reconnect it. */
 const MIC_STALL_MS = 1500;
-const MAX_MIC_RESTARTS_PER_MIN = 8;
+// Each play on iPhone can interrupt the audio engine and so need one rebuild; 6 a minute
+// covers a learner replaying samples, while a mic that keeps failing still ends in the
+// "reconnect" message instead of a loop.
+const MAX_MIC_RESTARTS_PER_MIN = 6;
 /** The same mic buffer repeating this many times in a row means Safari froze the mic input. */
 const MIC_FROZEN_CHUNKS = 6;
 /** iOS marked the mic track muted for this long: reconnect. */
@@ -99,8 +102,7 @@ export function useLiveCoach(opts: {
     mutedSince: 0,
     /** The audio engine was interrupted; when it comes back the mic input must be rebuilt. */
     wasInterrupted: false,
-    lastSignature: NaN,
-    frozenChunks: 0,
+    frozen: new FrozenInput(MIC_FROZEN_CHUNKS),
     micRestarting: false,
     micRestarts: [] as number[],
     nudgeTimer: undefined as ReturnType<typeof setTimeout> | undefined,
@@ -586,8 +588,7 @@ export function useLiveCoach(opts: {
     s.lastChunkAt = performance.now();
     s.silentSince = 0;
     s.mutedSince = 0;
-    s.frozenChunks = 0;
-    s.lastSignature = NaN;
+    s.frozen.reset();
     const track = stream.getAudioTracks()[0];
     if (track) {
       track.onended = () => void restartMic("ended");
@@ -687,14 +688,7 @@ export function useLiveCoach(opts: {
         const now = performance.now();
         s.lastChunkAt = now;
         // Frozen input: the very same buffer over and over (a real mic never repeats exactly).
-        const d = e.data;
-        const signature = d[0] + d[97] * 3 + d[1013] * 7 + d[d.length - 1] * 11;
-        s.frozenChunks = lvl > 0 && signature === s.lastSignature ? s.frozenChunks + 1 : 0;
-        s.lastSignature = signature;
-        if (s.frozenChunks >= MIC_FROZEN_CHUNKS && !s.micRestarting) {
-          s.frozenChunks = 0;
-          void restartMic("frozen input");
-        }
+        if (s.frozen.push(e.data, lvl) && !s.micRestarting) void restartMic("frozen input");
         // A real microphone always has some noise. Exact zeros mean iOS muted it behind our back.
         if (lvl === 0) {
           s.stats.silent++;

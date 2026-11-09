@@ -665,12 +665,9 @@ export const SCENARIOS = [
         { title: "Two", done: true, body: "" },
         { title: "Three", done: false, body: "" },
       ]);
-      // The repo's real PLAN.md (empty template or a live queue) parses into well-formed items,
-      // and commented-out examples never become items.
+      // The shipped PLAN.md only has commented-out examples: nothing to do.
       const { readFileSync } = await import("node:fs");
-      const real = parsePlan(readFileSync(new URL("../../../PLAN.md", import.meta.url), "utf8"));
-      for (const item of real) assert.ok(item.title && typeof item.body === "string" && typeof item.done === "boolean");
-      assert.deepEqual(parsePlan("<!-- example:\n- [ ] Not real\n-->\n"), []);
+      assert.deepEqual(parsePlan(readFileSync(new URL("../../../PLAN.md", import.meta.url), "utf8")), []);
       return null;
     },
   },

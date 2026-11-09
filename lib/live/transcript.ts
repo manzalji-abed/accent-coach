@@ -38,7 +38,8 @@ const tidy = (s: string) => s.replace(/\s+/g, " ").trim();
 export function addFragment(prev: string, fragment: string): string {
   const p = tidy(prev);
   const f = tidy(fragment);
-  if (p && f.length >= p.length && f.startsWith(p)) return fragment;
+  // A full-sentence resend (not a repeated short word like "no... no").
+  if (p.length >= 12 && f.length >= p.length && f.startsWith(p)) return fragment.trimStart() === fragment ? fragment : (prev.match(/^\s*/)?.[0] ?? "") + f;
   if (p && f.length > 12 && p.endsWith(f)) return prev;
   return prev + fragment;
 }
