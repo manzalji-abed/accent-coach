@@ -1,12 +1,16 @@
 export type Goal = "business" | "travel" | "exams" | "daily";
 export type Accent = "us" | "uk";
 
+export type ThemePref = "system" | "light" | "dark";
+
 export interface Profile {
   goal: Goal;
   accent: Accent;
   /** "HH:MM", 24h, the user's local time */
   reminderTime: string;
   createdAt: string;
+  /** Colour theme. Missing means follow the phone (System). */
+  theme?: ThemePref;
 }
 
 /** One word the coach flagged as mispronounced. */

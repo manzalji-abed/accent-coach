@@ -15,7 +15,7 @@ export function ProfileForm(props: { initial?: Profile | null; stepped: boolean;
 
   const submit = () =>
     goal &&
-    props.onSubmit({ goal, accent, reminderTime: time, createdAt: props.initial?.createdAt ?? new Date().toISOString() });
+    props.onSubmit({ goal, accent, reminderTime: time, createdAt: props.initial?.createdAt ?? new Date().toISOString(), ...(props.initial?.theme ? { theme: props.initial.theme } : {}) });
 
   const goalStep = (
     <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
