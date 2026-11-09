@@ -123,3 +123,39 @@ test("continue a finished conversation: old turns show and one more turn is adde
   await page.goto("/progress");
   await expect(page.getByTestId("continue-link")).toHaveCount(1);
 });
+
+test("pick who you're talking to; the tip names the audience and the summary names the habits", async ({ page }) => {
+  await onboard(page);
+  await page.getByRole("link", { name: /Free talk/ }).click();
+  await expect(page.getByTestId("audience-select")).toHaveValue("peer");
+  await expect(page.getByTestId("intent-select")).toHaveValue("small-talk");
+  await page.getByTestId("audience-select").selectOption("ceo");
+  await page.getByTestId("intent-select").selectOption("explain-problem");
+
+  let body: Record<string, string> = {};
+  await page.route("**/api/live", async (route) => {
+    body = JSON.parse(route.request().postData() ?? "{}");
+    await route.continue();
+  });
+  await speakTurn(page);
+  await expect(page.getByTestId("comms-picker")).toHaveCount(0);
+  expect(body).toMatchObject({ audienceId: "ceo", intentId: "explain-problem" });
+
+  await page.getByTestId("correction-chip").first().click();
+  const sheet = page.getByTestId("correction-sheet");
+  await expect(sheet.getByTestId("comms-tip")).toContainText("For a CEO");
+  await expect(sheet.getByTestId("comms-tip")).toContainText("lead with your point");
+  await sheet.getByRole("button", { name: "Done" }).click();
+
+  await page.getByRole("button", { name: "Finish" }).click();
+  await expect(page.getByTestId("comms-habits")).toContainText("Strongest habit:");
+  await expect(page.getByTestId("comms-habits")).toContainText("Change this:");
+});
+
+test("a communication scenario preselects its audience and goal", async ({ page }) => {
+  await onboard(page);
+  await page.goto("/talk?scenario=rp-outage");
+  await expect(page.locator(".talk-head h1")).toHaveText("Explain an outage to your CEO in 60 seconds");
+  await expect(page.getByTestId("audience-select")).toHaveValue("ceo");
+  await expect(page.getByTestId("intent-select")).toHaveValue("explain-problem");
+});

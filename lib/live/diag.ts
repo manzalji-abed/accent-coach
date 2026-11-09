@@ -53,6 +53,7 @@ const KEYS: Record<string, "number" | "boolean" | "string"> = {
   listening: "boolean",
   coachAudible: "boolean",
   correction: "boolean",
+  comms: "boolean",
   current: "boolean",
   resume: "boolean",
   resumed: "boolean",

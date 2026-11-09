@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { AREA_LABEL, commsSummary } from "@/lib/comms";
 import { phonemeLabel, sessionClarity } from "@/lib/progress";
 import { speak } from "@/lib/speech";
 import type { Accent, Session, WordFlag } from "@/lib/types";
@@ -11,6 +12,7 @@ export function SessionSummary(props: { session: Session; loading: boolean; onPi
   const flags = session.turns.flatMap((t) => t.flags ?? []);
   const unique = flags.filter((f, i) => flags.findIndex((g) => g.word.toLowerCase() === f.word.toLowerCase()) === i);
   const minutes = Math.max(1, Math.round(session.speakingSeconds / 60));
+  const habits = commsSummary(session.turns);
   const corrections = session.turns.filter((t) => t.role === "user" && t.correction).slice(-5);
 
   return (
@@ -46,6 +48,22 @@ export function SessionSummary(props: { session: Session; loading: boolean; onPi
             <strong>{session.takeaway.focus}</strong>
             <p>{session.takeaway.takeaway}</p>
           </>
+        )}
+        {habits && (
+          <ul className="comms-habits" data-testid="comms-habits">
+            {habits.strongest && (
+              <li>
+                <b>Strongest habit:</b> {AREA_LABEL[habits.strongest]}
+              </li>
+            )}
+            {habits.change ? (
+              <li>
+                <b>Change this:</b> {AREA_LABEL[habits.change]}
+              </li>
+            ) : (
+              <li>No communication habits to fix this time. Nicely done.</li>
+            )}
+          </ul>
         )}
       </div>
 

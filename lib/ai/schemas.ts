@@ -1,4 +1,5 @@
-import type { Correction, ShadowResult, Takeaway, TurnAnalysis, WordFlag } from "../types";
+import { COMMS_AREAS } from "../comms";
+import type { Comms, Correction, ShadowResult, Takeaway, TurnAnalysis, WordFlag } from "../types";
 
 /** JSON Schemas handed to Gemini so it must answer in exactly this shape. */
 const flagSchema = {
@@ -74,6 +75,20 @@ export const reviewToolParams = {
       description: "If the turn has a grammar mistake, a wrong word or word combination, noticeable filler words (like, you know) or awkward phrasing: the correct, natural way to say the whole turn, keeping their meaning. Empty only if it was already correct and natural.",
     },
     why: { type: "STRING", description: "If 'better' is set: one short, friendly reason, under 15 words, e.g. \"Use 'went' for the past.\"" },
+    comms: {
+      type: "OBJECT",
+      description: "Communication coaching for this audience and goal. Leave 'issues' and 'tip' empty when the turn communicated well.",
+      properties: {
+        issues: {
+          type: "ARRAY",
+          items: { type: "STRING", enum: [...COMMS_AREAS] },
+          description:
+            "Habits worth improving, most important first: structure (didn't lead with the point), detail (too much or too little for this audience), concision (fillers, rambling), confidence (hedging, apologising), tone.",
+        },
+        detail: { type: "STRING", enum: ["too_much", "too_little", "right"], description: "Level of detail for this audience" },
+        tip: { type: "STRING", description: "One short, concrete tip for this audience, under 25 words, e.g. 'Start with the impact, then the fix.' Empty if nothing to improve." },
+      },
+    },
   },
   required: ["clarity", "flags", "better", "why"],
 } as const;
@@ -138,13 +153,26 @@ const words = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-export function normalizeReview(raw: unknown, heard: string): { transcript: string; clarity: number; flags: WordFlag[]; correction?: Correction } {
+export function normalizeComms(raw: unknown): Comms | undefined {
+  const c = (raw ?? {}) as Record<string, unknown>;
+  const detail = c.detail === "too_much" || c.detail === "too_little" ? c.detail : undefined;
+  const given = Array.isArray(c.issues) ? c.issues : [];
+  // Keep only known habits, once each, in the order the model gave them.
+  const issues = COMMS_AREAS.filter((a) => given.includes(a)).sort((a, b) => given.indexOf(a) - given.indexOf(b));
+  if (detail && !issues.includes("detail")) issues.push("detail");
+  const tip = str(c.tip, 200);
+  // Nothing worth improving, or nothing to say about it: show nothing.
+  return issues.length && tip ? { issues: issues.slice(0, 3), ...(detail ? { detail } : {}), tip } : undefined;
+}
+
+export function normalizeReview(raw: unknown, heard: string): { transcript: string; clarity: number; flags: WordFlag[]; correction?: Correction; comms?: Comms } {
   const r = (raw ?? {}) as Record<string, unknown>;
   const transcript = str(heard, 2000) || str(r.transcript, 2000);
   const better = str(r.better, 300);
   // A "correction" that only repeats what they said (ignoring case and punctuation) isn't one.
   const correction = better && transcript && words(better) !== words(transcript) ? { better, why: str(r.why, 200) } : undefined;
-  return { transcript, clarity: score(r.clarity), flags: normalizeFlags(r.flags, transcript), ...(correction ? { correction } : {}) };
+  const comms = normalizeComms(r.comms);
+  return { transcript, clarity: score(r.clarity), flags: normalizeFlags(r.flags, transcript), ...(correction ? { correction } : {}), ...(comms ? { comms } : {}) };
 }
 
 export function normalizeTakeaway(raw: unknown): Takeaway {

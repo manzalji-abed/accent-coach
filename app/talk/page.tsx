@@ -10,6 +10,7 @@ import { SessionSummary } from "@/components/SessionSummary";
 import { Transcript } from "@/components/Transcript";
 import { useProfileGate } from "@/components/useProfileGate";
 import { WordSheet } from "@/components/WordSheet";
+import { AUDIENCES, audienceById, DEFAULT_AUDIENCE_ID, DEFAULT_INTENT_ID, INTENTS, intentById } from "@/lib/comms";
 import { upsertTurn } from "@/lib/live/transcript";
 import { useLiveCoach, type LiveStatus } from "@/lib/live/useLiveCoach";
 import { DEFAULT_PERSONA_ID, PERSONAS, personaById } from "@/lib/personas";
@@ -17,7 +18,7 @@ import { scenarioById } from "@/lib/scenarios";
 import { speak, stopSpeaking } from "@/lib/speech";
 import { findResumable, reopen } from "@/lib/resume";
 import { newId, saveSession, type AppState } from "@/lib/store";
-import type { Correction, Session, Takeaway, WordFlag } from "@/lib/types";
+import type { Comms, Correction, Session, Takeaway, WordFlag } from "@/lib/types";
 
 const MIC_STATE: Record<LiveStatus, MicState> = { idle: "idle", connecting: "requesting", listening: "recording", paused: "paused" };
 const MIC_LABEL: Record<LiveStatus, string> = {
@@ -43,6 +44,11 @@ function Talk({ app, earlier, scenarioParam }: { app: AppState; earlier: Session
   const [personaId, setPersonaId] = useState(scenario.personaId || DEFAULT_PERSONA_ID);
   const persona = personaById(personaId) ?? personaById(DEFAULT_PERSONA_ID)!;
 
+  const [audienceId, setAudienceId] = useState(earlier?.audienceId ?? scenario.audienceId ?? DEFAULT_AUDIENCE_ID);
+  const [intentId, setIntentId] = useState(earlier?.intentId ?? scenario.intentId ?? DEFAULT_INTENT_ID);
+  const audience = audienceById(audienceId) ?? audienceById(DEFAULT_AUDIENCE_ID)!;
+  const intent = intentById(intentId) ?? intentById(DEFAULT_INTENT_ID)!;
+
   const [session, setSession] = useState<Session>(() =>
     earlier
       ? reopen(earlier)
@@ -57,7 +63,7 @@ function Talk({ app, earlier, scenarioParam }: { app: AppState; earlier: Session
   );
   const [clips, setClips] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<{ flag: WordFlag; clip?: string; text?: string } | null>(null);
-  const [fix, setFix] = useState<{ said: string; correction: Correction } | null>(null);
+  const [fix, setFix] = useState<{ said: string; correction?: Correction; comms?: Comms } | null>(null);
   const [finished, setFinished] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
@@ -67,6 +73,8 @@ function Talk({ app, earlier, scenarioParam }: { app: AppState; earlier: Session
   const live = useLiveCoach({
     scenarioId: scenario.id,
     personaId: persona.id,
+    audienceId: audience.id,
+    intentId: intent.id,
     accent,
     opener: scenario.opener,
     openerId: session.turns[0].id,
@@ -85,6 +93,7 @@ function Talk({ app, earlier, scenarioParam }: { app: AppState; earlier: Session
             flags: r.flags,
             ...(r.transcript ? { text: r.transcript } : {}),
             ...(r.correction ? { correction: r.correction } : {}),
+            ...(r.comms ? { comms: r.comms } : {}),
           }),
         })),
       userDone: () => {},
@@ -99,8 +108,8 @@ function Talk({ app, earlier, scenarioParam }: { app: AppState; earlier: Session
   useEffect(() => {
     // A reopened conversation stays saved as finished until the learner says something new.
     const earlierIds = new Set(earlier?.turns.map((t) => t.id));
-    if (session.turns.some((t) => t.role === "user" && !earlierIds.has(t.id))) saveSession(session, { finished: Boolean(session.endedAt) });
-  }, [session, earlier]);
+    if (session.turns.some((t) => t.role === "user" && !earlierIds.has(t.id))) saveSession({ ...session, audienceId, intentId }, { finished: Boolean(session.endedAt) });
+  }, [session, earlier, audienceId, intentId]);
 
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });
@@ -112,7 +121,7 @@ function Talk({ app, earlier, scenarioParam }: { app: AppState; earlier: Session
     live.stop();
     stopSpeaking();
     const userTurns = session.turns.filter((t) => t.role === "user" && t.text);
-    const ended: Session = { ...session, endedAt: new Date().toISOString() };
+    const ended: Session = { ...session, audienceId: audience.id, intentId: intent.id, endedAt: new Date().toISOString() };
     setSession(ended);
     setFinished(true);
     if (!userTurns.length) return;
@@ -180,6 +189,31 @@ function Talk({ app, earlier, scenarioParam }: { app: AppState; earlier: Session
         </Link>
       </header>
 
+      {userTurnCount === 0 && live.status === "idle" && !earlier && (
+        <div className="comms-pick" data-testid="comms-picker">
+          <label>
+            Talking to
+            <select value={audienceId} onChange={(e) => setAudienceId(e.target.value)} data-testid="audience-select">
+              {AUDIENCES.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Goal
+            <select value={intentId} onChange={(e) => setIntentId(e.target.value)} data-testid="intent-select">
+              {INTENTS.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+
       {scenario.mode === "talk" && userTurnCount === 0 && live.status === "idle" && (
         <fieldset className="personas" data-testid="persona-picker">
           <legend>Who do you want to talk to?</legend>
@@ -217,8 +251,8 @@ function Talk({ app, earlier, scenarioParam }: { app: AppState; earlier: Session
             <div key={t.id} className="bubble user" data-testid="user-bubble">
               <Transcript text={t.text} flags={t.flags ?? []} onPick={(flag) => setOpen({ flag, clip: clips[t.id], text: t.text })} />
               <div className="bubble-meta">
-                {t.correction && (
-                  <button type="button" className="correction-chip" data-testid="correction-chip" onClick={() => setFix({ said: t.text, correction: t.correction! })}>
+                {(t.correction || t.comms) && (
+                  <button type="button" className="correction-chip" data-testid="correction-chip" onClick={() => setFix({ said: t.text, correction: t.correction, comms: t.comms })}>
                     Better way to say it
                   </button>
                 )}
@@ -267,7 +301,7 @@ function Talk({ app, earlier, scenarioParam }: { app: AppState; earlier: Session
           onClose={() => setOpen(null)}
         />
       )}
-      {fix && <CorrectionSheet said={fix.said} correction={fix.correction} accent={accent} playNative={live.playNative} onClose={() => setFix(null)} />}
+      {fix && <CorrectionSheet said={fix.said} correction={fix.correction} comms={fix.comms} audienceLabel={audience.forLabel} accent={accent} playNative={live.playNative} onClose={() => setFix(null)} />}
     </div>
   );
 }

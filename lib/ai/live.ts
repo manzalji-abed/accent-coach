@@ -1,5 +1,6 @@
 import "server-only";
 import { Behavior, GoogleGenAI, Modality, type LiveConnectConfig, type Schema } from "@google/genai";
+import type { Audience, Intent } from "../comms";
 import type { Persona } from "../personas";
 import type { Scenario } from "../scenarios";
 import type { Accent } from "../types";
@@ -19,7 +20,7 @@ export const liveApiVersion = () => process.env.GEMINI_LIVE_API_VERSION || DEFAU
  * browser can open a session but can't change the coach's instructions,
  * tools or voice.
  */
-export function liveConnectConfig(opts: { accent: Accent; scenario: Scenario; persona: Persona }): LiveConnectConfig {
+export function liveConnectConfig(opts: { accent: Accent; scenario: Scenario; persona: Persona; audience?: Audience; intent?: Intent }): LiveConnectConfig {
   return {
     responseModalities: [Modality.AUDIO],
     systemInstruction: livePrompt(opts),
@@ -31,7 +32,7 @@ export function liveConnectConfig(opts: { accent: Accent; scenario: Scenario; pe
         functionDeclarations: [
           {
             name: REVIEW_TOOL,
-            description: "Silently record pronunciation feedback for the learner's last turn. Call once after every learner turn. Never mention it out loud.",
+            description: "Silently record pronunciation and communication feedback for the learner's last turn. Call once after every learner turn. Never mention it out loud.",
             parameters: reviewToolParams as unknown as Schema,
             // Blocking: the coach waits for the app's instant answer, then always carries on talking.
             // Non-blocking + a silent answer let it end turns without replying (seen on a real phone).
@@ -52,7 +53,7 @@ export function liveConnectConfig(opts: { accent: Accent; scenario: Scenario; pe
  * A single-use token the browser uses to open one live session straight to
  * Gemini. The real API key never leaves the server.
  */
-export async function createLiveToken(opts: { accent: Accent; scenario: Scenario; persona: Persona }, now = Date.now()) {
+export async function createLiveToken(opts: { accent: Accent; scenario: Scenario; persona: Persona; audience?: Audience; intent?: Intent }, now = Date.now()) {
   const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY, httpOptions: { apiVersion: liveApiVersion() } });
   const token = await client.authTokens.create({
     config: {

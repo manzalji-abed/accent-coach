@@ -29,6 +29,7 @@ const MOCK_LINES: TurnAnalysis[] = [
     clarity: 78,
     flags: [THINK, COMFORTABLE],
     correction: { better: "I feel comfortable talking about my work.", why: "Drop 'I think': say how you feel directly." },
+    comms: { issues: ["confidence", "concision"], tip: "Say it straight: drop 'I think' and lead with your point." },
   },
   { transcript: "I like working with people and solving problems.", reply: "Nice. Can you tell me about a problem you solved recently?", clarity: 91, flags: [] },
   {
@@ -37,6 +38,7 @@ const MOCK_LINES: TurnAnalysis[] = [
     clarity: 84,
     flags: [THINK],
     correction: { better: "Last week we tracked down and fixed a major bug.", why: "'Track down' and 'major' sound more natural." },
+    comms: { issues: ["structure", "detail"], detail: "too_much", tip: "Start with the result, then add one detail only if they ask." },
   },
 ];
 

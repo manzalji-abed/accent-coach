@@ -77,6 +77,8 @@ interface TokenResponse {
 export function useLiveCoach(opts: {
   scenarioId: string;
   personaId: string;
+  audienceId: string;
+  intentId: string;
   accent: Accent;
   opener: string;
   openerId: string;
@@ -267,7 +269,7 @@ export function useLiveCoach(opts: {
         userText: (id, text) => optsRef.current.callbacks.userText(id, text),
         coachText: (id, text) => optsRef.current.callbacks.coachText(id, text),
         review: (id, review) => {
-          r.current.diag?.("review", { flags: review.flags.length, correction: Boolean(review.correction), clarity: review.clarity });
+          r.current.diag?.("review", { flags: review.flags.length, correction: Boolean(review.correction), comms: Boolean(review.comms), clarity: review.clarity });
           optsRef.current.callbacks.review(id, review);
         },
         userDone: (id, startedAt, endedAt) => {
@@ -332,7 +334,7 @@ export function useLiveCoach(opts: {
       userTurns++;
       const now = performance.now();
       t.heardUser(line.transcript, now);
-      t.reviewed({ transcript: line.transcript, clarity: line.clarity, flags: line.flags, better: line.correction?.better ?? "", why: line.correction?.why ?? "" });
+      t.reviewed({ transcript: line.transcript, clarity: line.clarity, flags: line.flags, better: line.correction?.better ?? "", why: line.correction?.why ?? "", comms: line.comms });
       t.heardCoach(line.reply, now);
       t.coachDone();
       speak(line.reply, optsRef.current.accent);
@@ -507,7 +509,7 @@ export function useLiveCoach(opts: {
     const res = await fetch("/api/live", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scenarioId: optsRef.current.scenarioId, personaId: optsRef.current.personaId, accent: optsRef.current.accent }),
+      body: JSON.stringify({ scenarioId: optsRef.current.scenarioId, personaId: optsRef.current.personaId, audienceId: optsRef.current.audienceId, intentId: optsRef.current.intentId, accent: optsRef.current.accent }),
     });
     const data = (await res.json().catch(() => ({}))) as TokenResponse;
     return { ...data, ok: res.ok };

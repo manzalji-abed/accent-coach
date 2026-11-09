@@ -36,6 +36,18 @@ export interface Correction {
   why: string;
 }
 
+export type CommsArea = "structure" | "detail" | "concision" | "confidence" | "tone";
+
+/** Communication coaching for one turn, aimed at the chosen audience. Only present when there is something to improve. */
+export interface Comms {
+  /** Habits worth improving this turn, most important first. */
+  issues: CommsArea[];
+  /** Too much or too little detail for this audience (absent means about right). */
+  detail?: "too_much" | "too_little";
+  /** One short, concrete tip for this audience. */
+  tip: string;
+}
+
 export interface TurnAnalysis {
   transcript: string;
   reply: string;
@@ -43,6 +55,7 @@ export interface TurnAnalysis {
   clarity: number;
   flags: WordFlag[];
   correction?: Correction;
+  comms?: Comms;
 }
 
 export interface ShadowResult {
@@ -67,12 +80,16 @@ export interface Turn {
   clarity?: number;
   flags?: WordFlag[];
   correction?: Correction;
+  comms?: Comms;
 }
 
 export interface Session {
   id: string;
   mode: Mode;
   scenarioId: string;
+  /** Who the learner practised talking to, and what they were doing (ids from lib/comms.ts). */
+  audienceId?: string;
+  intentId?: string;
   startedAt: string;
   endedAt?: string;
   turns: Turn[];
