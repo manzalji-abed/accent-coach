@@ -13,7 +13,7 @@ import {
   pcm16BytesToFloat,
   speechLevel,
 } from "@/lib/live/pcm";
-import { LATE_TEXT_MS, LiveTranscript, SPEECH_LEAD_MS, upsertTurn, type Review } from "@/lib/live/transcript";
+import { addFragment, LATE_TEXT_MS, LiveTranscript, SPEECH_LEAD_MS, upsertTurn, type Review } from "@/lib/live/transcript";
 import { rateLimited } from "@/lib/ai/guard";
 import { builtInVoiceActive, estimateSpeechMs, stopSpeaking } from "@/lib/speech";
 import { normalizeReview } from "@/lib/ai/schemas";
@@ -337,5 +337,17 @@ describe("built-in voice timing (keeps the live mic muted only while it talks)",
     expect(builtInVoiceActive()).toBe(false);
     stopSpeaking();
     expect(builtInVoiceActive()).toBe(false);
+  });
+});
+
+
+describe("live transcript: Gemini resending the whole sentence", () => {
+  it("replaces instead of doubling when the fragment repeats everything so far", () => {
+    const first = addFragment(addFragment("", "So, let's get"), " back to work?");
+    expect(addFragment(first, "So, let's get back to work?")).toBe("So, let's get back to work?");
+  });
+  it("ignores a long fragment that just repeats the end, and appends normal pieces", () => {
+    expect(addFragment("I don't have a name, but I'm here.", "but I'm here.")).toBe("I don't have a name, but I'm here.");
+    expect(addFragment("Hello", " there")).toBe("Hello there");
   });
 });
