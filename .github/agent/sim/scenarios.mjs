@@ -84,32 +84,46 @@ export const SCENARIOS = [
     },
   },
   {
-    name: "Auto-merge on, reviewer only medium-confident: waits for you and says why",
+    name: "Auto-merge on, medium confidence on a feature touching prompts and an API route: the pipeline merges it",
     async run() {
-      const medium = { ...CONFIDENT, confidence: "medium", confidence_reason: "It changes a shared style also used on the Shadowing screen." };
+      const medium = { ...CONFIDENT, confidence: "medium", confidence_reason: "A normal feature: ids are allowlisted and output is normalized." };
       const sim = new PipelineSim({ env: { AGENT_AUTO_MERGE: "true" }, script: { build: [PR_OK], review: [medium] } });
+      sim.gh.defaultPrFiles = ["app/api/live/route.ts", "lib/ai/prompts.ts", "lib/store.ts", "components/WordSheet.tsx"];
+      const i = sim.newIssue("Add audience-aware tips");
+      sim.addLabel(i, LABELS.trigger);
+      await sim.settle();
+      const pr = sim.agentPr(i);
+      assert.equal(sim.gh.items.get(pr).merged, true);
+      return sim;
+    },
+  },
+  {
+    name: "Auto-merge on, reviewer low-confident: waits for you and says why",
+    async run() {
+      const low = { ...CONFIDENT, confidence: "low", confidence_reason: "It changes the saved session format and could drop old sessions." };
+      const sim = new PipelineSim({ env: { AGENT_AUTO_MERGE: "true" }, script: { build: [PR_OK], review: [low] } });
       const i = sim.newIssue("Add a Slow button");
       sim.addLabel(i, LABELS.trigger);
       await sim.settle();
       const pr = sim.agentPr(i);
       assert.equal(sim.gh.items.get(pr).merged, false);
       assert.match(lastBot(sim, pr), /Ready for you to merge/);
-      assert.match(lastBot(sim, pr), /Not merged automatically: the reviewer's confidence is medium \(It changes a shared style/);
+      assert.match(lastBot(sim, pr), /Not merged automatically: the reviewer's confidence is low \(It changes the saved session format/);
       assert.match(sim.status(i), /Not merged automatically/);
       return sim;
     },
   },
   {
-    name: "Auto-merge on, rated high but the PR changes an API route or config: waits (sensitive paths enforced in code)",
+    name: "Auto-merge on, rated high but the PR changes dependencies or deploy config: waits (sensitive paths enforced in code)",
     async run() {
       const sim = new PipelineSim({ env: { AGENT_AUTO_MERGE: "true" }, script: { build: [PR_OK], review: [CONFIDENT] } });
-      sim.gh.defaultPrFiles = ["components/WordSheet.tsx", "app/api/turn/route.ts", "package.json"];
+      sim.gh.defaultPrFiles = ["components/WordSheet.tsx", "wrangler.jsonc", "package.json"];
       const i = sim.newIssue("Add a Slow button");
       sim.addLabel(i, LABELS.trigger);
       await sim.settle();
       const pr = sim.agentPr(i);
       assert.deepEqual(sim.gh.apiMerges, []);
-      assert.match(lastBot(sim, pr), /Not merged automatically: it changes sensitive files \(`app\/api\/turn\/route\.ts`, `package\.json`\)/);
+      assert.match(lastBot(sim, pr), /Not merged automatically: it changes sensitive files \(`wrangler\.jsonc`, `package\.json`\)/);
       return sim;
     },
   },

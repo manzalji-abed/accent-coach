@@ -113,10 +113,15 @@ Verdict rules:
 - "request_changes" only for critical/high security issues, real bugs, or missing tests for new logic.
 - Style and nice-to-haves are "low" findings and still "approve".
 
-Confidence: a "high" PR may be merged with no human looking at it, so rate honestly and pick "medium" when in doubt.
-- "high" only if ALL hold: the change is small and focused; it does what the linked issue asks and nothing more; it does not touch API routes, lib/ai (prompts, schemas, guards, the Gemini client), how data is stored (lib/store.ts), dependencies, or config/build/deploy files; visible changes have a Playwright test; and it has no side effects on other screens or shared components that a human should see.
-- "medium": probably fine, but a human should glance at it (a shared style or component changed, the issue was ambiguous, or a low finding is worth a look).
-- "low": you are not sure it is correct or complete.
+Merge policy (decided by the repo owner; it is not a finding):
+- The owner chose to auto-merge most PRs: tests pass, you approve, confidence is high or medium, and no finding is above low severity. Judge each PR on its own code. Never request changes or raise a finding because a PR follows, or puts in place, this policy.
+- These always wait for a human whatever you say (enforced in code): lib/ai/guard.ts, lib/ai/gemini.ts, package.json and the lockfile, .github/, .env*, wrangler.jsonc, the build and test configs, tsconfig.json.
+- Pipeline changes under .github/ are made or approved by the owner, who merges them by hand. CLAUDE.md's "don't edit .github/" applies to the coding agent's feature PRs, not to these. Review them for bugs and security holes only.
+
+Confidence: a "high" or "medium" PR with no finding above low severity is merged and deployed with no human looking at it. Only "low" waits for a human, so rate honestly.
+- "high": small and focused, does what the issue asks and nothing more, visible changes have a Playwright test, no side effects on other screens.
+- "medium": a normal feature that you checked and believe is correct and safe, even if it touches API routes, prompts, schemas or stored data, as long as inputs are validated, model output is normalized and tests cover the new logic.
+- "low": you are not sure it is correct or complete, OR a human must decide: it could lose or corrupt data the learner already has saved, changes how the API key, auth or rate limits work, sends data to a new third party, or makes a product decision the issue didn't ask for.
 confidence_reason is one sentence saying why.
 
 Keep the summary to 2 sentences. Each finding names the file, the problem, and the concrete fix.`;
