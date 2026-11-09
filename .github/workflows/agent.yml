@@ -108,6 +108,9 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: ${{ steps.prompt.outputs.prompt }}
+          # PLAN.md items are started by the pipeline itself (repository_dispatch sent by
+          # github-actions); only this repo's workflows can send that event.
+          allowed_bots: github-actions
           claude_args: |
             --max-turns 120
             --json-schema '${{ steps.prompt.outputs.schema }}'
